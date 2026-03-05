@@ -1,0 +1,27 @@
+{
+  "site": {
+    "title": "LLM 101",
+    "subtitle": "AI Learning Guide for Developers"
+  },
+  "nav": {
+    "home": "Home",
+    "tracks": "Tracks",
+    "glossary": "Glossary",
+    "about": "About"
+  },
+  "home": {
+    "hero": "Learn Large Language Models from a Developer's Perspective",
+    "heroSub": "Building your AI knowledge base, designed for experienced software developers",
+    "startLearning": "Start Learning"
+  },
+  "tracks": {
+    "title": "Learning Tracks",
+    "lessons": "lessons",
+    "comingSoon": "Coming Soon"
+  },
+  "common": {
+    "backToTrack": "Back to track",
+    "prev": "Previous",
+    "next": "Next"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "site": {
+    "title": "LLM 101",
+    "subtitle": "写给开发者的 AI 学习指南"
+  },
+  "nav": {
+    "home": "首页",
+    "tracks": "学习路径",
+    "glossary": "术语表",
+    "about": "关于"
+  },
+  "home": {
+    "hero": "从开发者的视角，系统学习大语言模型",
+    "heroSub": "为有软件开发经验的你，构建 AI 时代的知识体系",
+    "startLearning": "开始学习"
+  },
+  "tracks": {
+    "title": "学习路径",
+    "lessons": "课时",
+    "comingSoon": "即将推出"
+  },
+  "common": {
+    "backToTrack": "返回路径",
+    "prev": "上一课",
+    "next": "下一课"
+  }
+}
