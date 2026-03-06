@@ -1,0 +1,164 @@
+---
+title: "Model Ecosystem and Selection"
+order: 7
+tags: ["models", "ecosystem", "comparison"]
+prerequisites: ["beyond-text"]
+---
+
+## The Model Landscape
+
+The LLM space moves incredibly fast — breakthroughs happen every few months, API prices dropped roughly 80% over the past year, and open-source models have caught up to or matched proprietary ones in many areas.
+
+As a developer, you don't need to track every model release, but you do need to understand a few key dimensions for making technical decisions.
+
+## Closed-Source vs Open-Source
+
+### Closed-Source Models
+
+Used via API. You can't see the model weights. Pay per token.
+
+| Model | Provider | Characteristics |
+|-------|----------|----------------|
+| GPT-5 series | OpenAI | 400K context window, exceptional math and code, most mature ecosystem |
+| Claude 4.5 series | Anthropic | Leading code generation market share, excellent long-context, strong agent capabilities |
+| Gemini 3 | Google | Million-token context window, strong multimodal, Deep Think reasoning mode |
+| Grok 4 | xAI | Leading pure reasoning capability, #1 on LMArena ranking |
+
+Advantages:
+- Ready to use, no infrastructure needed
+- Usually represent the highest capability level
+- Continuously updated, no maintenance on your end
+
+Disadvantages:
+- Data sent to third parties (privacy concerns)
+- Limited to what the API offers
+- Costs scale with usage
+- Vendor lock-in risk
+
+### Open-Source Models
+
+You can download model weights and run them on your own machines.
+
+| Model | Source | Characteristics |
+|-------|--------|----------------|
+| Llama 4 | Meta | 10M token context window, Scout/Maverick variants, richest community ecosystem |
+| DeepSeek V3.2 / R1 | DeepSeek | 685B parameters, reasoning rivaling closed-source models, exceptional cost-performance |
+| Qwen 3 | Alibaba | Strong multilingual support, 0.5B to 110B sizes, includes vision and omni-modal variants |
+| Kimi K2.5 | Moonshot AI | 1T params (32B active), Agent Swarm coordinating 100 agents, native vision integration |
+| MiniMax M2.5 | MiniMax | 10B active params, 80.2% SWE-bench, exceptional cost-performance for code and agent tasks |
+| GLM-5 | Zhipu AI | 745B params (44B active), MIT licensed, trained entirely on Huawei Ascend chips |
+| Step 3 | StepFun | 316B params (38B active), 300% inference efficiency vs DeepSeek-R1, multimodal |
+| Mistral 3 | Mistral AI | Small 3 (24B) Apache 2.0 licensed, fast and efficient |
+
+Advantages:
+- Data never leaves your servers
+- Can be fine-tuned
+- No API call fees (but infrastructure costs exist)
+- Full control over deployment and runtime
+
+Disadvantages:
+- Requires GPU resources
+- You handle deployment, operations, and updates
+
+Notably, open-source models made massive progress in 2025. DeepSeek R1 achieved near-ChatGPT reasoning at a fraction of the cost — the so-called "DeepSeek moment." Llama 4 scores 85-86% on MMLU-Pro, demonstrating that open-source models can match proprietary flagship performance.
+
+### The Chinese AI Ecosystem
+
+Chinese teams have made particularly strong contributions to the open-source model landscape, forming a distinct competitive ecosystem:
+
+- **DeepSeek** and **Moonshot AI** together account for over 23% of global token consumption, becoming a major force in the open-source ecosystem
+- **Zhipu AI**'s GLM-5 proved the viability of training frontier models entirely on domestic chips (Huawei Ascend), significant for supply chain independence
+- **MiniMax**'s M2.5 achieves 80.2% on SWE-bench with only 10B active parameters — a poster child for the "small model, big capability" approach
+- **StepFun**'s Step 3 covers text, vision, and audio in a comprehensive multimodal offering
+- **Alibaba's Qwen** series spans 0.5B to 110B parameters, providing the most comprehensive Chinese language open-source option
+
+For Chinese-language use cases or applications requiring deployment within China, these models are often a better choice than their overseas counterparts.
+
+## Model Size and Capability
+
+Model size is typically expressed in parameter count:
+
+- **1B - 3B** (small): Simple tasks, classification, summarization. Can run on CPU or low-end GPUs
+- **7B - 24B** (medium): The sweet spot for most common tasks. Runs on a single consumer GPU
+- **30B - 70B** (large): Approaching closed-source model capabilities, requires multiple GPUs or quantization
+- **70B+** (very large): Requires professional hardware or cloud services
+
+An important principle: **bigger isn't always better — match the model to your task.** A well-fine-tuned 7B model can outperform a general-purpose 70B model on specific tasks.
+
+## The Context Window Leap
+
+Context windows are one of the most significant recent advances:
+
+- **GPT-5 series**: 400K tokens
+- **Gemini 3**: Million-level tokens
+- **Llama 4 Scout**: 10M tokens (~7,500 pages of text)
+
+This means you can fit entire code repositories, complete documentation sets, or even whole books into a single conversation. It fundamentally changes many application patterns — some scenarios that previously required RAG can now be handled with direct context.
+
+But longer context also means higher cost and latency. In practice, you still need to weigh the trade-offs.
+
+## Multimodal
+
+The latest models handle more than text:
+
+- **Text + Images**: GPT-5, Claude, Gemini, and Qwen-VL all understand image content
+- **Omni-modal**: Qwen-Omni supports text, image, and audio input/output
+- **Text → Images**: DALL-E, Midjourney, Stable Diffusion, Flux
+- **Text → Code → Execution**: Code interpreter features
+
+For developers, multimodal means AI input and output are no longer limited to text, dramatically expanding possible applications.
+
+## API Pricing
+
+APIs charge per token, with different prices for input and output (per million tokens):
+
+| Model | Input | Output | Tier |
+|-------|-------|--------|------|
+| GPT-5.2 | $1.75 | $14.00 | Flagship |
+| Claude Opus 4.5 | $5.00 | $25.00 | Flagship |
+| Gemini 3 Pro | $2.00 | $12.00 | Flagship |
+| Gemini 3 Flash | $0.50 | $3.00 | Cost-effective |
+| DeepSeek R1 | $0.55 | — | Budget |
+
+The price range spans enormously — from $0.02/M at the cheapest to nearly $100/M at the top end. Most production applications use models in the $0.10-$2.00/M range.
+
+## How to Choose a Model
+
+A practical selection framework:
+
+### 1. Clarify Your Constraints
+- **Data privacy**: Can sensitive data be sent to third parties? If not → open-source/local deployment
+- **Latency requirements**: Need real-time responses? → Smaller models or Flash/Haiku tier
+- **Budget**: Expected monthly call volume and costs?
+
+### 2. Start with API for Prototyping
+- Use Claude or GPT-5 to validate whether your idea is feasible
+- This is the fastest path — no infrastructure to worry about
+
+### 3. Downgrade or Migrate as Needed
+- If API costs are too high → try Flash/Haiku tier or open-source models
+- If you need data privacy → migrate to local deployment
+- If you need specific capabilities → consider fine-tuning
+
+### 4. Evaluate Continuously
+- The LLM field changes extremely fast; the best choice from a few months ago may already be outdated
+- Establish simple evaluation processes and regularly test new models
+
+## Benchmarks and Evaluation
+
+You'll encounter various model leaderboards and benchmark scores. A few common ones:
+
+- **MMLU / MMLU-Pro**: Multi-domain knowledge test. Flagship models generally exceed 90%, and this benchmark is approaching saturation
+- **HumanEval**: Code generation capability. Top models reach 95%+, limited differentiation
+- **SWE-bench Verified**: Closer to real-world software engineering tasks, now the primary benchmark for code ability
+- **LMArena (formerly Chatbot Arena)**: Human blind evaluation Elo ranking, best reflects actual user experience
+
+But be cautious: **benchmark scores don't equal real-world performance.** Top models score similarly on traditional benchmarks but may perform very differently in your specific scenario. The most reliable approach is testing with your own data and use cases.
+
+## Key Takeaways for Developers
+
+1. **There's no "best" model, only the "most suitable" one.** Choose based on task, budget, and constraints.
+2. **Start with APIs, migrate as needed.** Don't deploy open-source models from day one unless you have a clear reason.
+3. **Focus on cost-performance, not raw capability.** Mistral 3 delivers ~92% of GPT-5.2's capability at ~15% of the price.
+4. **Keep your interfaces abstract.** Design your application with model calls abstracted out, making it easy to switch later.
+5. **The LLM ecosystem moves extremely fast.** The data in this article may soon be outdated — building your own evaluation framework matters more than memorizing specific numbers.

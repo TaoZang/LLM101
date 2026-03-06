@@ -1,0 +1,78 @@
+---
+title: "Tokens and Text Representation"
+order: 2
+tags: ["tokenization", "embedding", "token"]
+prerequisites: ["what-is-llm"]
+---
+
+## Why Tokens
+
+Computers can't process text directly. Every piece of text you write must be split into small units before being fed into a model — these units are called **tokens**.
+
+Tokens are the fundamental currency of the LLM world. Model input is billed by tokens, output is billed by tokens, and context windows are measured in tokens. Understanding tokens is the starting point for understanding LLMs.
+
+## Tokenization: How Text Gets Split
+
+You might assume models process text character by character or word by word. In practice, most modern models use a method called **BPE** (Byte Pair Encoding), producing units somewhere between characters and words.
+
+Some examples (using GPT-family tokenizers):
+
+- `"hello"` → 1 token
+- `"indescribable"` → `"indes"` + `"crib"` + `"able"` → 3 tokens
+- `"你好世界"` → likely 2-4 tokens (Chinese characters are typically 1-2 tokens each)
+- `"ChatGPT"` → `"Chat"` + `"GPT"` → 2 tokens
+
+Key observations:
+
+- **Common words are usually one token**; rare words get split into subwords
+- **Token efficiency varies by language.** English averages ~4 characters per token, while Chinese averages ~1-2 characters per token
+- **Spaces and punctuation are part of tokens**
+
+This explains practical quirks: why Chinese text consumes more tokens than English, why models sometimes struggle with spelling or character counting — they "see" tokens, not characters.
+
+## From Tokens to Vectors: Embeddings
+
+After tokenization, each token needs to become a set of numbers for the model to process. This conversion is called **Embedding**.
+
+Think of embeddings as a **semantic coordinate system**:
+
+- Each token is mapped to a point in a high-dimensional space
+- Semantically similar words are close together in this space
+- For example, `"cat"` and `"dog"` would be near each other, while `"cat"` and `"car"` would be far apart
+
+These coordinates aren't hand-crafted — the model learns them during training. A typical embedding dimension ranges from several hundred to several thousand, meaning each token is represented by a vector of that many numbers.
+
+## Why Embeddings Matter
+
+Embeddings aren't just an internal implementation detail — they're extremely useful in applications:
+
+- **Semantic search**: Convert documents and queries into embeddings, measure relevance by vector distance — far more accurate than keyword matching
+- **RAG (Retrieval-Augmented Generation)**: Use embeddings to find relevant documents, then feed them to the LLM for answer generation
+- **Classification and clustering**: Use embeddings for text classification without complex feature engineering
+
+You'll explore these applications in depth in the RAG track.
+
+## Context Window: Your Token Budget
+
+Every model has a **context window** — the maximum number of tokens it can process at once.
+
+- GPT-3.5: 4K tokens
+- GPT-4: 8K / 32K / 128K tokens
+- Claude: 100K / 200K tokens
+- Some latest models: over 1M tokens
+
+Context window = input tokens + output tokens. If your prompt uses too many tokens, there's less room for the response.
+
+Practical concerns:
+
+- **Long documents**: A book might contain hundreds of thousands of tokens — anything beyond the window is invisible to the model
+- **Cost control**: Token usage directly impacts API billing
+- **Performance**: More tokens means slower responses
+
+## Summary
+
+- Tokens are the basic unit of text processing in LLMs — they're not characters or words
+- Tokenization splits text into subword-level segments
+- Embeddings map tokens to semantic vectors, enabling the model to understand meaning
+- The context window determines how much content a model can process at once
+- Token count directly affects cost and performance

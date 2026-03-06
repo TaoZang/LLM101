@@ -1,0 +1,72 @@
+---
+title: "How Transformers Work"
+order: 3
+tags: ["transformer", "attention", "architecture"]
+prerequisites: ["tokens-and-text"]
+---
+
+## Why You Should Know About Transformers
+
+Nearly every major language model you've heard of — GPT, Claude, Llama, Gemini — is built on the same architecture: the **Transformer**. It was introduced in 2017 by a Google paper titled "Attention Is All You Need."
+
+You don't need to understand every mathematical detail, but grasping the core ideas will help you understand what models can and can't do.
+
+## Before Transformers
+
+Earlier language models processed text sequentially — reading left to right, one word at a time. This created two problems:
+
+1. **Slow**: Processing had to be serial, no parallelism
+2. **Forgetful**: By the time it reached later parts, earlier content was largely forgotten
+
+Imagine reading a book where you must forget the page from two pages ago every time you turn a new one. That was the reality for earlier models handling long text.
+
+## Attention: The Core Intuition
+
+The breakthrough of Transformers is the **Attention mechanism**. Its core idea in one sentence:
+
+> When processing each token, the model can "see" and "attend to" all other tokens in the input — not just the previous one.
+
+An example:
+
+> "The sushi at this restaurant was incredibly fresh, and **its** salmon sashimi was the best I've ever had."
+
+When processing the word "its," the Attention mechanism lets the model look back and attend to "restaurant," understanding that "its" refers to "this restaurant."
+
+Crucially, the model learns **different attention patterns**. Some attention heads focus on grammatical relationships, others on semantic associations, and others on positional information. Multiple heads work in parallel, letting the model understand text from different angles.
+
+## Parallel Processing: The Speed Advantage
+
+Another key advantage of Transformers is **parallelization**.
+
+When processing input, a Transformer can compute relationships between all tokens simultaneously instead of one at a time. This means it can fully leverage GPU parallel computing — the key reason LLM training can scale massively.
+
+In developer terms: previous architectures were `for` loops; Transformers are `map` with parallel execution.
+
+## Stacking Layers
+
+A Transformer model consists of many stacked layers:
+
+- Each layer contains Attention mechanisms followed by additional processing
+- Input flows from bottom to top, with each layer refining the information
+- **Shallow layers capture basic patterns** (grammar, common phrases)
+- **Deep layers capture higher-level semantics** (logical relationships, abstract concepts)
+
+GPT-3 has 96 layers, meaning your input goes through 96 rounds of "understanding and refinement." More layers mean stronger comprehension but higher computational costs.
+
+## Context Window and Attention
+
+The context window discussed in the previous lesson is essentially the computational scope of the Attention mechanism.
+
+The model needs to compute relationships between every token and every other token. For N tokens, the computation scales roughly with N². This is why:
+
+- **Context windows have limits** — computation grows rapidly with length
+- **Longer context means higher cost and latency**
+- The industry is actively researching more efficient Attention variants to support longer contexts
+
+## Key Takeaways
+
+1. **Transformers can "see" the entire input at once** — this is the root of their power
+2. **The model doesn't "remember" text** — it recomputes all Attention from scratch on every request
+3. **Content outside the context window doesn't exist to the model** — it has no persistent memory
+4. **Computation cost grows with context length**, directly affecting your API costs and response speed
+5. **The model doesn't necessarily attend equally to everything** — information in the middle of input can sometimes be overlooked (the "lost in the middle" phenomenon)

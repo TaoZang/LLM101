@@ -1,26 +1,26 @@
 {
   "site": {
     "title": "LLM 101",
-    "subtitle": "AI Learning Guide for Developers"
+    "subtitle": "A Systematic Guide to Large Language Models"
   },
   "nav": {
     "home": "Home",
-    "tracks": "Tracks",
+    "tracks": "Explore",
     "glossary": "Glossary",
     "about": "About"
   },
   "home": {
-    "hero": "Learn Large Language Models from a Developer's Perspective",
-    "heroSub": "Building your AI knowledge base, designed for experienced software developers",
-    "startLearning": "Start Learning"
+    "hero": "A Systematic Guide to Large Language Models",
+    "heroSub": "From core concepts to practical applications, building your AI knowledge base",
+    "startLearning": "Start Exploring"
   },
   "tracks": {
-    "title": "Learning Tracks",
+    "title": "Topics",
     "lessons": "lessons",
     "comingSoon": "Coming Soon"
   },
   "common": {
-    "backToTrack": "Back to track",
+    "backToTrack": "Back",
     "prev": "Previous",
     "next": "Next"
   }

@@ -1,27 +1,27 @@
 {
   "site": {
     "title": "LLM 101",
-    "subtitle": "写给开发者的 AI 学习指南"
+    "subtitle": "系统学习大语言模型"
   },
   "nav": {
     "home": "首页",
-    "tracks": "学习路径",
+    "tracks": "探索",
     "glossary": "术语表",
     "about": "关于"
   },
   "home": {
-    "hero": "从开发者的视角，系统学习大语言模型",
-    "heroSub": "为有软件开发经验的你，构建 AI 时代的知识体系",
-    "startLearning": "开始学习"
+    "hero": "系统学习大语言模型",
+    "heroSub": "从核心概念到实践应用，构建 AI 时代的知识体系",
+    "startLearning": "开始探索"
   },
   "tracks": {
-    "title": "学习路径",
+    "title": "探索主题",
     "lessons": "课时",
     "comingSoon": "即将推出"
   },
   "common": {
-    "backToTrack": "返回路径",
-    "prev": "上一课",
-    "next": "下一课"
+    "backToTrack": "返回",
+    "prev": "上一篇",
+    "next": "下一篇"
   }
 }

@@ -1,0 +1,122 @@
+---
+title: "Beyond Text: Other Types of AI Models"
+order: 6
+tags: ["multimodal", "diffusion", "tts", "asr", "video"]
+prerequisites: ["inference"]
+---
+
+## From Text to Everything
+
+The previous lessons focused on large language models — they process text and output text. But the world of AI extends far beyond text. Speech recognition, image generation, video synthesis — these capabilities are powered by different types of models with different architectures and principles.
+
+You don't need to dive deep into the math of each model type, but understanding how they work helps you judge which tool fits which scenario.
+
+## Speech → Text (ASR)
+
+**Representative models**: OpenAI Whisper, Google USM
+
+Automatic Speech Recognition (ASR) converts audio into text. The architecture of modern ASR models is actually familiar — Whisper is a **Transformer encoder-decoder**, from the same architecture family as LLMs.
+
+How it works:
+
+1. **Audio preprocessing**: Audio is split into 30-second chunks and converted into a mel spectrogram — a way of "drawing" sound as an image
+2. **Encoder**: Reads the spectrogram and extracts speech features
+3. **Decoder**: Generates text step by step from the features, one token at a time
+
+Whisper's breakthrough was **scale**: trained on 680,000 hours of multilingual audio data covering 90+ languages, achieving near-human-level recognition accuracy.
+
+Developer perspective: Whisper is open-source and can be deployed locally. For applications that need voice input, it's one of the most commonly used building blocks.
+
+## Text → Speech (TTS)
+
+**Representative models**: OpenAI TTS, ElevenLabs, Fish Speech, Spark-TTS
+
+Text-to-Speech converts written text into natural-sounding human voice. Modern TTS models can generate speech nearly indistinguishable from real humans.
+
+Two core approaches:
+
+**Autoregressive**: Similar to how LLMs generate text, but generating "speech tokens." Speech is first encoded into a discrete token sequence, then a language model generates these tokens one by one, and finally they're decoded into audio waveforms.
+
+**Diffusion-based**: Starting from random noise and gradually denoising to produce speech. Uses the same class of methods as image generation (detailed below).
+
+Key capabilities of modern TTS:
+- **Voice cloning**: Replicate someone's voice from just a few seconds of audio
+- **Emotion control**: Automatically adjust speed, pitch, and emotion based on text content
+- **Multilingual**: A single model supporting dozens of languages
+
+Developer perspective: TTS lets your application "speak." Combined with ASR, it forms a complete voice conversation capability.
+
+## Text → Image
+
+**Representative models**: Stable Diffusion, DALL-E, Midjourney, Flux
+
+Text-to-image generation uses a core technology called **diffusion models**, which work on an entirely different principle from LLMs' "predict the next token."
+
+### The Intuition Behind Diffusion
+
+Imagine you have a clear photo, and you keep adding noise to it until it becomes pure random static. **Diffusion models learn the reverse of this process** — recovering a clear image from noise, step by step.
+
+The generation process:
+1. **Start from pure noise**: A completely random "static screen"
+2. **Gradually denoise**: Each step removes some noise, making the image clearer
+3. **Text guidance**: At each denoising step, the model references your text description to decide which direction to denoise
+
+This process typically happens in **latent space** — not operating directly on pixels, but on a compressed representation that's later decoded into an image. This dramatically reduces computational cost.
+
+### How Text Guides the Image
+
+The model needs to "understand" your text description. This typically uses models like **CLIP** — which understands both text and images and can judge whether a piece of text matches an image. During generation, CLIP continuously guides the denoising direction, ensuring the final image matches your description.
+
+Developer perspective: Stable Diffusion is open-source and can run locally (requires a GPU). For APIs, DALL-E and Midjourney are the most popular choices. Image generation is widely used in product design, content creation, and prototyping.
+
+## Text → Video
+
+**Representative models**: Sora (OpenAI), Kling (Kuaishou), Veo (Google)
+
+Video generation can be understood as "image generation + the time dimension." The core challenge is not just making each frame look good, but maintaining coherence between frames.
+
+### How It Works
+
+The mainstream approach combines diffusion models with Transformers:
+
+1. **Decompose video into spatiotemporal patches**: Similar to how LLMs split text into tokens, video models divide frames into spatial and temporal patches
+2. **Denoise in latent space**: Similar to image generation, but simultaneously handling space (frame content) and time (inter-frame motion)
+3. **Holistic generation**: The model processes the entire video clip at once rather than frame by frame, ensuring visual coherence
+
+### Current State
+
+Video generation is the youngest and fastest-improving field:
+
+- **Sora 2**: Generates 10-25 second videos with synchronized audio (dialogue, sound effects, ambient sound)
+- **Kling 3.0**: Supports multi-shot sequences (3-15 seconds) with character consistency across different camera angles
+- Generation quality is already usable for short videos, ad creatives, and concept demos
+
+Current limitations are also clear: long videos remain difficult, physics aren't always accurate, and generation costs are high.
+
+## Speech ↔ Speech (End-to-End Conversation)
+
+**Representative models**: GPT-4o voice mode, Qwen-Omni
+
+The latest trend is **end-to-end voice conversation** — no longer the pipeline approach of "speech→text→LLM→text→speech," but models that directly listen and directly speak.
+
+GPT-4o's voice mode is a prime example: it directly receives audio input and generates audio output, perceiving tone and emotion, even supporting interruptions. Latency is low enough for natural real-time conversation.
+
+This direction blurs the boundaries between ASR, LLM, and TTS — a hallmark of multimodal fusion.
+
+## Model Type Comparison
+
+| Type | Input | Output | Core Architecture | Typical Latency |
+|------|-------|--------|-------------------|-----------------|
+| LLM | Text | Text | Transformer (autoregressive) | Milliseconds (streaming) |
+| ASR | Audio | Text | Transformer (encoder-decoder) | Seconds |
+| TTS | Text | Audio | Autoregressive / Diffusion | Seconds |
+| Image Generation | Text | Image | Diffusion + Transformer | Seconds to minutes |
+| Video Generation | Text | Video | Diffusion Transformer | Minutes |
+
+## Key Takeaways for Developers
+
+1. **Different tasks use different architectures.** The LLM approach of "predict the next token" isn't universal — image and video generation use entirely different diffusion models.
+2. **Transformers are everywhere.** Despite architectural differences, the Transformer appears as a core component in virtually every type of model.
+3. **Pipeline vs end-to-end is an important design choice.** Voice conversation can use ASR + LLM + TTS stitched together, or an end-to-end model. The former is flexible and controllable; the latter has lower latency and more natural experience.
+4. **Diffusion models are the other pillar of generative AI.** Understanding the core idea of "denoising from noise" captures the essence of image/video/audio generation.
+5. **Multimodal is the trend.** More and more models are bridging the boundaries between text, images, audio, and video. Understanding the principles of each model type helps you design more powerful applications.

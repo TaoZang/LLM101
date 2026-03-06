@@ -5,7 +5,7 @@ export default async function AboutPage() {
   const t = await getTranslations("tracks");
 
   return (
-    <div>
+    <div className="max-w-4xl mx-auto px-6 py-12">
       <h1 className="text-3xl font-bold mb-8">{tNav("about")}</h1>
       <div className="text-center py-16 text-stone-400">{t("comingSoon")}</div>
     </div>

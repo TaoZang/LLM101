@@ -8,7 +8,7 @@ export default async function HomePage() {
   const meta = trackMeta[locale] ?? trackMeta.zh;
 
   return (
-    <div>
+    <div className="max-w-4xl mx-auto px-6 py-12">
       <section className="py-16 text-center">
         <h1 className="text-4xl font-bold tracking-tight mb-4">{t("hero")}</h1>
         <p className="text-lg text-stone-500 mb-8 max-w-2xl mx-auto">
@@ -30,7 +30,7 @@ export default async function HomePage() {
             <Link
               key={track.slug}
               href={`/tracks/${track.slug}`}
-              className="block p-6 rounded-xl border border-stone-200 hover:border-stone-300 hover:shadow-sm transition-all bg-white"
+              className="block p-5 rounded-xl border border-stone-200/60 hover:border-stone-300 transition-colors"
             >
               <div
                 className="w-2 h-2 rounded-full mb-3"

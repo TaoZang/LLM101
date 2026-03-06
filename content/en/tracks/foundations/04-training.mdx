@@ -1,0 +1,83 @@
+---
+title: "How Models Are Trained"
+order: 4
+tags: ["training", "pre-training", "fine-tuning", "rlhf"]
+prerequisites: ["transformer"]
+---
+
+## Three Stages
+
+Training a model like ChatGPT isn't a single step — it happens in three stages:
+
+1. **Pre-training**: Learning language itself
+2. **Supervised Fine-tuning (SFT)**: Learning to have conversations
+3. **RLHF**: Learning human preferences
+
+Each stage solves a different problem with different data. Understanding this pipeline helps you understand why models excel at some tasks and struggle with others.
+
+## Stage 1: Pre-training
+
+This is the most resource-intensive stage. The model learns one thing from massive amounts of text: **predict the next token**.
+
+Training data sources include:
+
+- Internet web pages (Common Crawl, etc.)
+- Books, papers, Wikipedia
+- Code repositories (GitHub, etc.)
+- Other public text data
+
+The scale is staggering. GPT-3's training data contained roughly 300 billion tokens, and subsequent models use even more. Training requires thousands of GPUs running for weeks to months, costing millions to hundreds of millions of dollars.
+
+After pre-training, you get a **base model**. It has learned language, knowledge, and reasoning patterns, but it can't hold a conversation — if you ask it a question, it might generate more questions rather than answer you.
+
+## Stage 2: Supervised Fine-tuning (SFT)
+
+To turn the base model into a useful assistant, it's fine-tuned on **human-annotated conversation data**.
+
+This data looks like:
+
+```
+User: Explain what recursion is
+Assistant: Recursion is a programming technique where a function calls itself during execution...
+```
+
+Human annotators write high-quality responses, and the model learns this question-answer pattern. After SFT, the model starts understanding instructions and producing structured responses.
+
+SFT uses far less data than pre-training (typically tens of thousands to hundreds of thousands of conversations), but it fundamentally changes the model's behavior.
+
+## Stage 3: RLHF
+
+**RLHF** (Reinforcement Learning from Human Feedback) is the key step that makes models "helpful."
+
+The process roughly:
+
+1. The model generates multiple responses for the same question
+2. Human annotators rank these responses (which is better)
+3. The ranking data trains a "reward model" — it learns to predict what humans would prefer
+4. Reinforcement learning optimizes the original model to generate responses that score higher with the reward model
+
+RLHF teaches the model:
+
+- **Safety**: Refusing harmful requests
+- **Helpfulness**: Providing detailed, organized answers
+- **Honesty**: Expressing uncertainty when unsure
+
+This is why ChatGPT and Claude say "I'm not sure" or refuse certain requests — these behaviors are trained through RLHF.
+
+## Training Data Cutoff
+
+Pre-training uses data collected before a certain point in time — the **knowledge cutoff date**.
+
+- The model doesn't know about events after the cutoff
+- It can't automatically update its knowledge
+- This is one reason technologies like RAG (Retrieval-Augmented Generation) exist — to provide models with real-time information
+
+When a model performs poorly on recent events, it's often not because it's "dumb" — it's because that information simply isn't in the training data.
+
+## Practical Implications
+
+1. **Base model ≠ Chat model.** When you call an API, you're usually using a version that went through SFT + RLHF. Some APIs also offer base model access, which behaves very differently.
+2. **Model knowledge has a time boundary.** Don't expect it to know the latest information — use RAG for real-time data.
+3. **The model's "personality" is trained.** Its caution, politeness, and refusals are the result of RLHF, not some form of "consciousness."
+4. **Training data sets the capability ceiling.** If your use case involves very specialized or niche domains, the model may underperform — there's simply less of that content in the training data.
+5. **Fine-tuning is something you can do.** In the Fine-tuning track, you'll learn how to tune models with your own data.

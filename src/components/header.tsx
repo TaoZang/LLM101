@@ -30,18 +30,6 @@ export function Header() {
           >
             {t("tracks")}
           </Link>
-          <Link
-            href="/glossary"
-            className="text-stone-600 hover:text-stone-900 transition-colors"
-          >
-            {t("glossary")}
-          </Link>
-          <Link
-            href="/about"
-            className="text-stone-600 hover:text-stone-900 transition-colors"
-          >
-            {t("about")}
-          </Link>
           <button
             onClick={switchLocale}
             className="text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"

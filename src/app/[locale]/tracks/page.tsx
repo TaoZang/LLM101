@@ -9,7 +9,7 @@ export default async function TracksPage() {
   const meta = trackMeta[locale] ?? trackMeta.zh;
 
   return (
-    <div>
+    <div className="max-w-4xl mx-auto px-6 py-12">
       <h1 className="text-3xl font-bold mb-8">{t("title")}</h1>
       <div className="space-y-4">
         {tracks.map((track) => {
@@ -20,7 +20,7 @@ export default async function TracksPage() {
             <Link
               key={track.slug}
               href={`/tracks/${track.slug}`}
-              className="flex items-start gap-4 p-6 rounded-xl border border-stone-200 hover:border-stone-300 hover:shadow-sm transition-all bg-white"
+              className="flex items-start gap-4 py-5 border-b border-stone-200 hover:border-stone-300 transition-colors"
             >
               <div
                 className="w-3 h-3 rounded-full mt-1.5 shrink-0"

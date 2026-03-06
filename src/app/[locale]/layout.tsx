@@ -3,8 +3,16 @@ import { NextIntlClientProvider, useMessages } from "next-intl";
 import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
+import { Source_Sans_3 } from "next/font/google";
 import { Header } from "@/components/header";
 import "../globals.css";
+
+const sourceSans = Source_Sans_3({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-source-sans",
+});
+
 
 type Locale = (typeof routing.locales)[number];
 
@@ -42,11 +50,17 @@ export default async function LocaleLayout({
   }
 
   return (
-    <html lang={locale} className="antialiased">
+    <html lang={locale} className={`antialiased ${sourceSans.variable}`}>
+      <head>
+        <link
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="bg-stone-50 text-stone-900 min-h-screen">
         <NextIntlClientProvider locale={locale} messages={messages}>
           <Header />
-          <main className="max-w-4xl mx-auto px-6 py-12">{children}</main>
+          <main>{children}</main>
         </NextIntlClientProvider>
       </body>
     </html>

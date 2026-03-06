@@ -4,6 +4,7 @@ import { getLesson, getLessons } from "@/lib/content";
 import { trackMeta } from "@/lib/tracks";
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
+import remarkGfm from "remark-gfm";
 
 export async function generateMetadata({
   params,
@@ -37,18 +38,9 @@ export default async function LessonPage({
 
   return (
     <div>
-      <div className="mb-8">
-        <Link
-          href={`/tracks/${slug}`}
-          className="text-sm text-stone-400 hover:text-stone-600 transition-colors"
-        >
-          {meta.title}
-        </Link>
-      </div>
-
       <article className="prose">
         <h1>{lessonData.title}</h1>
-        <MDXRemote source={lessonData.content} />
+        <MDXRemote source={lessonData.content} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
       </article>
 
       <nav className="flex justify-between mt-16 pt-8 border-t border-stone-200">

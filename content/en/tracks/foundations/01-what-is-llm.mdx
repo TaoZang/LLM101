@@ -4,16 +4,53 @@ order: 1
 tags: ["llm", "basics"]
 ---
 
-This is placeholder content that will be expanded later.
+## What LLMs Are
 
-## Understanding LLMs from a Developer's Perspective
+In traditional software, given an input, a program produces a definite output. Function calls have clear return values. Conditional branches have explicit rules.
 
-A Large Language Model (LLM) is essentially a probability model — given an input text, it predicts the most likely next token.
+Large Language Models (LLMs) break this paradigm. An LLM is not a set of if-else rules — it's a **probability model** that, given some text, predicts what's most likely to come next.
 
-## Why Developers Should Learn About LLMs
+## The Core Mechanism: Next Token Prediction
 
-As a software engineer, understanding how LLMs work helps you:
+At its heart, an LLM does exactly one thing:
 
-- Design better systems that interact with AI
-- Understand the boundaries of model capabilities
-- Make informed technical decisions
+> Given all preceding text, predict the most probable next token.
+
+For example, given `"The weather today is"`, it might produce:
+- `"nice"` → 65% probability
+- `"bad"` → 15% probability
+- `"really"` → 12% probability
+- others → 8%
+
+It picks one, appends it to the text, and predicts the next token. This loop continues until a complete response is generated.
+
+This is called **autoregressive generation** — producing output one token at a time. The "typing" effect you see in ChatGPT is a direct manifestation of this process.
+
+## How It Differs from Traditional Software
+
+| | Traditional Software | LLM |
+|---|---|---|
+| Driven by | Rules | Probabilities |
+| Output determinism | Same input → same output | Same input → possibly different output |
+| Capability source | Human-written logic | Patterns learned from massive data |
+| Error characteristics | Crashes, exceptions, logic bugs | "Hallucinations" — confidently wrong answers |
+| Boundaries | Well-defined (documented) | Fuzzy (requires exploration and testing) |
+
+The key mindset shift: **an LLM doesn't "understand" your intent — it performs statistical pattern matching.** Its responses look like "thinking," but underneath it's computing probabilities.
+
+## What Makes Them "Large"
+
+The "large" in Large Language Model refers to **parameter count**. Think of parameters as internal knobs — the more parameters, the more complex language patterns the model can capture.
+
+- GPT-2 (2019): 1.5 billion parameters
+- GPT-3 (2020): 175 billion parameters
+- GPT-4 (2023): undisclosed, estimated over 1 trillion
+
+This explosive growth in parameters led to an interesting phenomenon: **emergent abilities**. When models get large enough, they suddenly exhibit capabilities that smaller models don't have — logical reasoning, code generation, multilingual translation. It's like heating water to 100°C and watching it suddenly boil — a phase transition from quantity to quality.
+
+## Key Takeaways
+
+1. **LLMs are probability machines**, not knowledge bases. Their answers are "most likely," not "certainly correct."
+2. **Their capabilities come from training data.** Domains not covered in training will yield poor or fabricated results.
+3. **They don't execute logic.** What looks like reasoning is pattern matching. This explains why they sometimes make surprisingly basic mistakes.
+4. **Non-determinism is a feature, not a bug.** The same question may yield different answers — that's a natural consequence of probabilistic sampling.

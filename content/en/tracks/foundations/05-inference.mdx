@@ -1,0 +1,93 @@
+---
+title: "Inference: How Models Generate Text"
+order: 5
+tags: ["inference", "temperature", "sampling", "streaming"]
+prerequisites: ["training"]
+---
+
+## Training vs Inference
+
+The previous lesson covered how models "learn." This lesson covers how models "work" — that is, **inference**.
+
+When you call the ChatGPT API or type a question in the web interface, inference is what happens: the model reads your input and generates a response token by token.
+
+Inference parameters are what you directly control. Understanding them lets you fine-tune model behavior for your needs.
+
+## Temperature: Controlling Randomness
+
+**Temperature** is the most important inference parameter. It controls how random the model is when selecting the next token.
+
+Suppose the model's probability distribution for the next token is:
+- `"great"` → 50%
+- `"wonderful"` → 30%
+- `"nice"` → 15%
+- others → 5%
+
+Different temperature values affect the selection like this:
+
+- **Temperature = 0**: Almost always picks the highest-probability token (`"great"`). Output is highly deterministic but potentially monotonous
+- **Temperature = 0.7**: Samples roughly proportional to probabilities, producing moderate variation
+- **Temperature = 1.5**: Probabilities get "flattened," lower-probability tokens have a much bigger chance, output becomes more random or even chaotic
+
+Practical guidelines:
+- **Code generation, data extraction, factual Q&A**: Low temperature (0 - 0.3)
+- **General conversation, writing**: Medium temperature (0.5 - 0.8)
+- **Creative writing, brainstorming**: Higher temperature (0.8 - 1.2)
+
+## Top-p: An Alternative Control
+
+**Top-p** (also called nucleus sampling) controls randomness from a different angle:
+
+> Sample only from the smallest set of tokens whose cumulative probability reaches p.
+
+For example, Top-p = 0.9 means: sort tokens by probability from highest to lowest, take those that sum to 90%, and randomly sample from that set.
+
+The advantage of Top-p is that it's **adaptive**:
+- If the model is very confident (one token at 95% probability), the candidate set is tiny
+- If the model is uncertain, the candidate set automatically grows
+
+Usually Temperature and Top-p are used together, or you adjust just one.
+
+## Stop Sequences: When to Stop
+
+How does the model know when to stop generating? There are several mechanisms:
+
+- **Special token**: The model generates an `<EOS>` (end of sequence) token, signaling the response is complete
+- **Stop sequences**: You can specify strings that, when generated, cause the model to stop
+- **Max tokens**: You can set a maximum output token count, and generation is cut off when reached
+
+Setting these properly prevents the model from rambling or getting cut off unexpectedly.
+
+## Streaming
+
+You've probably noticed ChatGPT's responses appear word by word rather than all at once. This is **streaming**.
+
+Technically, it's implemented via **Server-Sent Events (SSE)**. Every time one or a few tokens are generated, the server pushes an update.
+
+Streaming matters for user experience:
+- Users don't stare at a blank screen waiting
+- They can judge early whether the response is going in the right direction
+- Perceived response time drops dramatically
+
+Most LLM APIs support streaming mode. In your applications, you should enable it by default.
+
+## Cost Structure of Inference
+
+APIs typically charge per token, with different prices for input and output:
+
+- **Input tokens** (your prompt): Usually cheaper
+- **Output tokens** (model's response): Usually more expensive (because they must be generated one at a time)
+
+Some optimization strategies:
+- **Trim your prompt**: Remove unnecessary content
+- **Set reasonable max tokens**: Prevent excessively long responses
+- **Caching**: Cache results for identical or similar requests
+- **Choose the right model**: Use smaller models for simple tasks, reserve large models for complex ones
+
+## Key Takeaways
+
+1. **Temperature and Top-p balance creativity vs determinism.** Choose values based on your use case.
+2. **Temperature = 0 doesn't mean 100% deterministic**, but it's close enough for most purposes.
+3. **Streaming should be your default**, unless you have specific reasons to wait for the complete response.
+4. **Output tokens cost more than input tokens.** Factor this into your prompt design.
+5. **Inference speed depends on model size, input length, and output length.** Latency-sensitive applications need to balance these trade-offs.

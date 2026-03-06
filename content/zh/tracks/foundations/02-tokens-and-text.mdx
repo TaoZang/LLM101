@@ -1,0 +1,78 @@
+---
+title: "Token 与文本表示"
+order: 2
+tags: ["tokenization", "embedding", "token"]
+prerequisites: ["what-is-llm"]
+---
+
+## 为什么需要 Token
+
+计算机不能直接处理文字。你写的每一段文本，在送进模型之前，都需要被切分成一个个小单元——这些小单元就叫 **token**。
+
+Token 是 LLM 世界的基本货币单位。模型的输入按 token 计费，输出按 token 计费，上下文窗口按 token 计算。理解 token，是理解 LLM 的起点。
+
+## Tokenization：文本怎么被切分
+
+你可能以为模型按"字"或"词"处理文本。实际上，大多数现代模型使用一种叫 **BPE**（Byte Pair Encoding）的方法，切分出来的结果介于字符和单词之间。
+
+一些例子（以 GPT 系列的 tokenizer 为例）：
+
+- `"hello"` → 1 个 token
+- `"indescribable"` → `"indes"` + `"crib"` + `"able"` → 3 个 token
+- `"你好世界"` → 可能是 2-4 个 token（中文每个字通常是 1-2 个 token）
+- `"ChatGPT"` → `"Chat"` + `"GPT"` → 2 个 token
+
+关键观察：
+
+- **常见词汇通常是一个 token**，罕见词汇会被拆成多个子词
+- **不同语言的 token 效率不同**。英文平均 1 个 token ≈ 4 个字符，中文则大约 1 个 token ≈ 1-2 个字
+- **空格和标点也是 token 的一部分**
+
+这解释了一些实际问题：为什么中文的 token 消耗比英文高？为什么模型有时在拼写或字数统计上犯错？因为它"看到"的不是字符，而是 token。
+
+## 从 Token 到向量：Embedding
+
+切完 token 之后，每个 token 需要变成一组数字，模型才能处理。这个转换叫做 **Embedding**（嵌入）。
+
+你可以把 Embedding 理解为一个**语义坐标系**：
+
+- 每个 token 被映射到一个高维空间中的一个点
+- 语义相近的词，在这个空间中距离相近
+- 比如 `"猫"` 和 `"狗"` 的坐标会很近，而 `"猫"` 和 `"汽车"` 则相距很远
+
+这个坐标不是人工设计的，是模型在训练过程中自己学出来的。一个典型的 Embedding 维度是几百到几千——也就是说，每个 token 用一个几百到几千维的向量来表示。
+
+## 为什么 Embedding 重要
+
+Embedding 不只是模型内部的技术细节，它在实际应用中非常有用：
+
+- **语义搜索**：把文档和查询都转成 Embedding，用向量距离衡量相关性，比关键词匹配精准得多
+- **RAG（检索增强生成）**：先用 Embedding 找到相关文档，再把文档喂给 LLM 生成回答
+- **分类和聚类**：用 Embedding 做文本分类，不需要复杂的特征工程
+
+你在后续的 RAG 章节会深入接触这些应用。
+
+## 上下文窗口：Token 的预算
+
+每个模型都有一个 **上下文窗口**（context window），就是它一次能处理的最大 token 数。
+
+- GPT-3.5：4K token
+- GPT-4：8K / 32K / 128K token
+- Claude：100K / 200K token
+- 一些最新模型：甚至超过 1M token
+
+上下文窗口 = 输入 token + 输出 token。如果你的 prompt 占了太多 token，留给回答的空间就少了。
+
+需要关注的实际问题：
+
+- **长文档处理**：一本书可能有几十万 token，超出窗口的部分模型"看不到"
+- **成本控制**：token 用量直接影响 API 调用费用
+- **性能影响**：token 越多，响应越慢
+
+## 小结
+
+- Token 是 LLM 处理文本的基本单位，不等于字或词
+- Tokenization 把文本切成子词级别的片段
+- Embedding 把 token 映射为语义向量，让模型能理解文本含义
+- 上下文窗口决定了模型一次能处理多少内容
+- Token 数量直接关联成本和性能
