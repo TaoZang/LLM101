@@ -25,7 +25,7 @@ How it works:
 
 Whisper's breakthrough was **scale**: trained on 680,000 hours of multilingual audio data covering 90+ languages, achieving near-human-level recognition accuracy.
 
-Developer perspective: Whisper is open-source and can be deployed locally. For applications that need voice input, it's one of the most commonly used building blocks.
+Whisper is open-source and can be deployed locally. For applications that need voice input, it's one of the most commonly used building blocks.
 
 ## Text → Speech (TTS)
 
@@ -44,7 +44,7 @@ Key capabilities of modern TTS:
 - **Emotion control**: Automatically adjust speed, pitch, and emotion based on text content
 - **Multilingual**: A single model supporting dozens of languages
 
-Developer perspective: TTS lets your application "speak." Combined with ASR, it forms a complete voice conversation capability.
+TTS lets applications "speak." Combined with ASR, it forms a complete voice conversation capability.
 
 ## Text → Image
 
@@ -67,7 +67,7 @@ This process typically happens in **latent space** — not operating directly on
 
 The model needs to "understand" your text description. This typically uses models like **CLIP** — which understands both text and images and can judge whether a piece of text matches an image. During generation, CLIP continuously guides the denoising direction, ensuring the final image matches your description.
 
-Developer perspective: Stable Diffusion is open-source and can run locally (requires a GPU). For APIs, DALL-E and Midjourney are the most popular choices. Image generation is widely used in product design, content creation, and prototyping.
+Stable Diffusion is open-source and can run locally (requires a GPU). For APIs, DALL-E and Midjourney are the most popular choices. Image generation is widely used in product design, content creation, and prototyping.
 
 ## Text → Video
 
@@ -113,7 +113,7 @@ This direction blurs the boundaries between ASR, LLM, and TTS — a hallmark of 
 | Image Generation | Text | Image | Diffusion + Transformer | Seconds to minutes |
 | Video Generation | Text | Video | Diffusion Transformer | Minutes |
 
-## Key Takeaways for Developers
+## Key Takeaways
 
 1. **Different tasks use different architectures.** The LLM approach of "predict the next token" isn't universal — image and video generation use entirely different diffusion models.
 2. **Transformers are everywhere.** Despite architectural differences, the Transformer appears as a core component in virtually every type of model.

@@ -1,0 +1,220 @@
+---
+title: "工具调用"
+order: 2
+tags: ["tool-use", "function-calling", "api"]
+prerequisites: ["what-is-agent"]
+---
+
+## LLM 的天然缺陷
+
+LLM 很强大，但它有几个硬伤：
+
+- **知识有截止日期**：它不知道今天的天气、最新的股价、刚发布的新闻
+- **不能执行代码**：它能写代码，但不能真的运行它
+- **不能访问外部系统**：它读不了你的文件、查不了你的数据库、调不了你的 API
+- **数学不可靠**：它在做概率采样，不是在算数
+
+这些都不是模型不够聪明——而是它被困在了一个"只能生成文本"的沙箱里。
+
+**工具调用（Tool Use）就是打破这个沙箱的方式。**
+
+## Function Calling 是怎么工作的
+
+工具调用的核心思路很简单：
+
+1. 你告诉模型：这里有一些工具，每个工具做什么、需要什么参数
+2. 模型在回答问题时，如果需要用工具，就生成一个"调用请求"
+3. 你的代码执行这个调用，把结果返回给模型
+4. 模型根据结果继续回答
+
+注意：**模型自己不执行工具。** 它只是决定"我要调用哪个工具，传什么参数"，然后生成一段结构化数据。实际执行是你的代码负责的。
+
+整个过程就像这样：
+
+```
+用户: 北京现在几度？
+
+模型 → 生成工具调用: get_weather(location="北京")
+                    ↓
+你的代码执行 get_weather("北京") → 返回 "22°C，晴"
+                    ↓
+模型收到结果 → 生成最终回答: "北京现在 22°C，晴天。"
+```
+
+## 定义工具
+
+工具通过 JSON Schema 描述，告诉模型每个工具的名称、用途和参数格式。以一个天气查询工具为例：
+
+```json
+{
+  "name": "get_weather",
+  "description": "获取指定城市的当前天气信息",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string",
+        "description": "城市名称，如'北京'、'上海'"
+      },
+      "unit": {
+        "type": "string",
+        "enum": ["celsius", "fahrenheit"],
+        "description": "温度单位"
+      }
+    },
+    "required": ["location"]
+  }
+}
+```
+
+**description 至关重要。** 模型通过描述理解工具的用途和适用场景。描述不清楚，模型就不知道什么时候该用它、怎么用。
+
+## 实际代码示例
+
+用 Anthropic SDK 实现一个带工具的对话：
+
+```python
+import anthropic
+import json
+
+client = anthropic.Anthropic()
+
+# 定义工具
+tools = [
+    {
+        "name": "get_weather",
+        "description": "获取指定城市的当前天气",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "城市名称"
+                }
+            },
+            "required": ["location"]
+        }
+    }
+]
+
+# 你的工具实现
+def get_weather(location):
+    # 实际项目中这里会调用天气 API
+    return {"temperature": 22, "condition": "晴", "city": location}
+
+# 发送请求
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=1024,
+    tools=tools,
+    messages=[{"role": "user", "content": "北京今天天气怎么样？"}]
+)
+
+# 检查模型是否要调用工具
+if response.stop_reason == "tool_use":
+    # 找到工具调用
+    tool_block = next(b for b in response.content if b.type == "tool_use")
+
+    # 执行工具
+    result = get_weather(**tool_block.input)
+
+    # 把结果返回给模型
+    follow_up = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        tools=tools,
+        messages=[
+            {"role": "user", "content": "北京今天天气怎么样？"},
+            {"role": "assistant", "content": response.content},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_block.id,
+                        "content": json.dumps(result)
+                    }
+                ]
+            }
+        ]
+    )
+    print(follow_up.content[0].text)
+    # → "北京今天天气晴朗，气温 22°C。"
+```
+
+核心流程就三步：**定义工具 → 检测调用 → 执行并返回结果。**
+
+## 模型怎么决定用不用工具
+
+模型收到你的消息后，面临一个选择：直接回答，还是先调用工具？
+
+这个决定基于几个因素：
+
+- **问题是否需要外部信息**："北京天气"需要工具，"什么是递归"不需要
+- **工具的 description 是否匹配**：描述越精确，模型判断越准确
+- **模型的推理能力**：能力越强的模型越懂得在合适的时机使用合适的工具
+
+你不需要（也不应该）硬编码"当用户问天气时调用天气工具"这样的规则。模型会自己判断。这正是 Agent 的灵活性所在。
+
+## 一次对话中多次调用工具
+
+真实场景中，模型经常需要连续调用多个工具：
+
+```
+用户: 帮我对比北京和上海的天气，推荐周末去哪个城市
+
+模型 → 调用 get_weather(location="北京")
+     → 调用 get_weather(location="上海")
+
+收到两个结果后:
+模型 → "北京 22°C 晴天，上海 18°C 有雨。推荐去北京，适合户外活动。"
+```
+
+有些模型支持**并行工具调用**——同时发出多个调用请求。这可以大幅减少交互轮次，降低延迟。
+
+还有一种更复杂的场景：**链式调用**。一个工具的结果决定了下一个工具的输入：
+
+```
+用户: 帮我找到最近修改的文件，看看改了什么
+
+模型 → 调用 list_files(sort="modified", limit=1) → 返回 "src/api.ts"
+模型 → 调用 read_file(path="src/api.ts") → 返回文件内容
+模型 → 调用 git_diff(path="src/api.ts") → 返回最近的修改
+模型 → 综合信息给出回答
+```
+
+这种多步工具调用就是 Agent 行为的基础。
+
+## 常见工具类型
+
+在实际应用中，工具大致分为几类：
+
+| 类型 | 示例 | 用途 |
+|------|------|------|
+| 信息检索 | 网页搜索、数据库查询、文件读取 | 获取模型不知道的信息 |
+| 代码执行 | Python 沙箱、Shell 命令 | 执行计算、数据处理 |
+| 外部 API | 天气、地图、支付、邮件 | 与外部服务交互 |
+| 文件操作 | 读写文件、创建目录 | 操作本地文件系统 |
+| 系统操作 | 截屏、点击、输入 | 操作电脑界面（Computer Use） |
+
+工具的设计直接决定了 Agent 的能力上限——Agent 只能做你给它工具做的事。
+
+## 工具设计的注意事项
+
+好的工具设计能让 Agent 工作得更可靠：
+
+**描述要清晰**：不是给人看的，是给模型看的。写清楚工具做什么、什么时候该用、什么时候不该用。
+
+**粒度要合适**：太粗（一个工具做十件事）模型不知道什么时候该用；太细（读一行文件也要一个工具）导致调用轮次爆炸。
+
+**返回格式要稳定**：模型需要理解工具返回的内容。结构化的 JSON 比随意的文本更好解析。
+
+**错误信息要有用**：工具失败时，返回清晰的错误描述，而不是空结果或含糊的状态码。这样模型才能理解发生了什么并尝试恢复。
+
+## 要点总结
+
+1. **工具调用让 LLM 从"能说"变成"能做"。** 它是 Agent 的基础能力。
+2. **模型不执行工具，只生成调用请求。** 实际执行由你的代码负责，这是安全控制的关键点。
+3. **工具通过 JSON Schema 定义，description 是最重要的字段。** 模型靠描述决定何时以及如何使用工具。
+4. **多步工具调用是 Agent 行为的基础。** 链式调用让模型能处理需要多个步骤的复杂任务。
+5. **工具设计决定了 Agent 的能力上限。** 清晰的描述、合适的粒度、稳定的返回格式是关键。

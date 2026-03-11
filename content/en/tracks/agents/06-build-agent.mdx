@@ -1,0 +1,275 @@
+---
+title: "Building Your First Agent"
+order: 6
+tags: ["implementation", "practice", "framework", "safety"]
+prerequisites: ["memory-and-state"]
+---
+
+## From Theory to Practice
+
+In previous chapters, we covered the core concepts — reasoning loops, tool use, architecture patterns, memory management. Now let's put it all together and build a working agent from scratch.
+
+We'll build a **file analysis agent**: give it a directory path, and it will autonomously browse files, analyze code structure, and answer your questions about the project.
+
+## Minimal Agent Loop Implementation
+
+The core of an agent is a while loop. Here's the minimal implementation with Python + Anthropic SDK:
+
+```python
+import anthropic
+import json
+import os
+
+client = anthropic.Anthropic()
+
+# Define tools
+tools = [
+    {
+        "name": "list_directory",
+        "description": "List files and subdirectories in a directory",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory path"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "read_file",
+        "description": "Read file contents. Works with text files like code, config files, docs, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path"},
+                "limit": {"type": "integer", "description": "Max lines to read, default 100"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "search_files",
+        "description": "Search for files containing specified text in a directory",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string", "description": "Directory to search"},
+                "pattern": {"type": "string", "description": "Text pattern to search for"}
+            },
+            "required": ["directory", "pattern"]
+        }
+    }
+]
+
+# Tool execution
+def execute_tool(name, params):
+    if name == "list_directory":
+        path = params["path"]
+        try:
+            entries = os.listdir(path)
+            return json.dumps(entries[:50])  # Limit count
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    elif name == "read_file":
+        try:
+            with open(params["path"], "r") as f:
+                lines = f.readlines()[:params.get("limit", 100)]
+                return "".join(lines)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    elif name == "search_files":
+        results = []
+        for root, dirs, files in os.walk(params["directory"]):
+            for file in files:
+                filepath = os.path.join(root, file)
+                try:
+                    with open(filepath, "r") as f:
+                        for i, line in enumerate(f, 1):
+                            if params["pattern"] in line:
+                                results.append(f"{filepath}:{i}: {line.strip()}")
+                except:
+                    continue
+        return json.dumps(results[:20])  # Limit results
+
+# Agent main loop
+def run_agent(user_message):
+    messages = [{"role": "user", "content": user_message}]
+    system = "You are a file analysis assistant. Use the provided tools to browse and analyze project files, answering the user's questions."
+
+    max_iterations = 20
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system,
+            tools=tools,
+            messages=messages
+        )
+
+        # Add model's response to message history
+        messages.append({"role": "assistant", "content": response.content})
+
+        # If model stops calling tools, task is done
+        if response.stop_reason == "end_turn":
+            for block in response.content:
+                if hasattr(block, "text"):
+                    return block.text
+            return "Task complete."
+
+        # Handle tool calls
+        tool_results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                result = execute_tool(block.name, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result
+                })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return "Maximum iterations reached. Task incomplete."
+
+# Usage
+answer = run_agent("Analyze the project structure of ./my-project and tell me what kind of project this is")
+print(answer)
+```
+
+This ~100 lines of code is a complete agent. The core is the `while` loop — continuously letting the model think and act until it decides to give a final answer or hits the iteration limit.
+
+## Key Design Decisions
+
+### Tool Granularity
+
+The example above has three tools: list directory, read file, search. This granularity is intentional:
+
+- **Too few** (a single "analyze_project" tool): the model loses flexibility, can't explore on demand
+- **Too many** (20 fine-grained tools): the model picks wrong tools, context gets filled with tool definitions
+- **Just right** (3-8): the model can clearly distinguish each tool's purpose
+
+A practical rule: **start with 3-5 core tools, then adjust based on actual model performance.**
+
+### Tool Descriptions
+
+Compare these two descriptions:
+
+```
+❌ "Read a file"
+✅ "Read file contents. Works with text files like code, config files, docs, etc."
+```
+
+Good descriptions tell the model three things: **what it does, when to use it, when not to use it.** Agent-facing tool descriptions need to be more specific than human-facing ones.
+
+### Error Handling
+
+Notice that every tool execution in the code above is wrapped in try-catch, returning clear error messages. This is because:
+
+1. Agents **will** encounter errors (path doesn't exist, insufficient permissions, file too large)
+2. Clear error messages enable **self-correction**
+3. If tools throw unhandled exceptions that crash the program, the agent loop breaks
+
+## Safety Considerations
+
+Letting AI execute actions autonomously makes safety the top concern.
+
+### Principle of Least Privilege
+
+Only give the agent capabilities it needs — nothing more. The example above can only read files and search — it can't write files, execute commands, or access the network.
+
+```python
+# Dangerous: giving the agent arbitrary command execution
+def execute_command(cmd):
+    return os.popen(cmd).read()  # Never do this
+
+# Safe: read-only operations within a specific directory
+def read_file(path):
+    # Verify path is within allowed directory
+    allowed_dir = "/home/user/projects"
+    real_path = os.path.realpath(path)
+    if not real_path.startswith(allowed_dir):
+        return {"error": "Path is outside allowed directory"}
+    # ... read file
+```
+
+### Path Validation
+
+Agents might construct unexpected paths — like `../../etc/passwd`. **Always validate that paths are within allowed boundaries.**
+
+### Operation Confirmation
+
+For operations with side effects (writing files, sending requests, deleting data), add a human confirmation layer:
+
+```python
+def execute_tool_with_confirmation(name, params):
+    if name in ["write_file", "delete_file", "send_request"]:
+        print(f"Agent wants to execute: {name}({params})")
+        confirm = input("Allow? (y/n): ")
+        if confirm != "y":
+            return {"error": "User denied this operation"}
+    return execute_tool(name, params)
+```
+
+### Resource Limits
+
+Prevent agents from running out of control:
+- **Maximum iterations**: `max_iterations = 20` in the code above
+- **Token budget**: Limit maximum token consumption per task
+- **Timeouts**: Tasks running too long should be terminated
+- **File size limits**: Avoid reading huge files that blow up the context
+
+## Debugging and Evaluation
+
+Agents are harder to debug than regular LLM calls — behavior is non-deterministic, and the same input might take completely different paths.
+
+### Logging Is Your Most Important Tool
+
+Record every agent step: what it thought, what tools it called, what results it got.
+
+```python
+# Add logging to the agent loop
+for block in response.content:
+    if hasattr(block, "text"):
+        print(f"[Thought] {block.text}")
+    if block.type == "tool_use":
+        print(f"[Tool] {block.name}({json.dumps(block.input)})")
+```
+
+### Evaluation Criteria
+
+How do you know if the agent is working correctly?
+
+- **Task completion rate**: Given a set of test tasks, what percentage are completed successfully?
+- **Step efficiency**: How many steps did it take? Were there redundant steps?
+- **Error recovery**: Did it successfully recover when encountering errors?
+- **Cost**: How many tokens were consumed per task?
+
+Don't aim for 100% success rate. The value of an agent is handling most situations autonomously, with humans as the fallback for the rest.
+
+## Popular Agent Frameworks
+
+We built an agent from scratch to understand the principles. In real projects, you'll likely use existing frameworks:
+
+**Anthropic Agent SDK**: Official from Anthropic, lightweight, provides the agent loop, tool registration, multi-agent orchestration (handoffs), and other foundational capabilities. Best suited for scenarios using Claude models directly.
+
+**LangGraph**: Part of the LangChain ecosystem, uses graphs to define agent workflows. Suited for scenarios requiring complex flow control. Flexible but has a steep learning curve.
+
+**CrewAI**: Focuses on multi-agent collaboration, organizing agent teams with "roles" and "tasks." Good for simulating team collaboration scenarios.
+
+**Mastra**: A TypeScript-ecosystem agent framework with built-in workflow engine, RAG, evaluation, and more. Good fit for Node.js stack projects.
+
+The principle for choosing a framework is the same as choosing a model: **understand your needs first, then pick the tool.** If your scenario can be implemented in 100 lines of code, you don't need a framework.
+
+## Key Takeaways
+
+1. **An agent's core is a while loop** — call the model, execute tools, feed results back, repeat until done. ~100 lines of code can implement a working agent.
+2. **Tool design determines the agent's ceiling**: 3-8 core tools, clear descriptions, meaningful error messages.
+3. **Safety is the top priority**: least privilege, path validation, operation confirmation, resource limits. Autonomous AI execution ≠ unrestricted AI execution.
+4. **Logging and evaluation are essential**: record every step, measure agent quality by task completion rate and step efficiency.
+5. **Frameworks are optional** — understand the principles first, then choose a framework. Simple scenarios don't need one.

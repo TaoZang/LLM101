@@ -1,0 +1,172 @@
+---
+title: "ReAct and the Reasoning Loop"
+order: 3
+tags: ["react", "reasoning", "chain-of-thought", "loop"]
+prerequisites: ["tool-use"]
+---
+
+## Tools Alone Aren't Enough
+
+In the last chapter, we saw that tools let LLMs "do things." But a key question remains: **how does the model know what order to use tools in?**
+
+If it's just "check the weather," one step suffices. But real-world tasks usually look like this:
+
+> "Our API response time suddenly spiked in the past hour. Help me figure out why."
+
+There's no fixed sequence of steps. You need to check monitoring, then logs, maybe database slow queries, recent deployments... each step's results determine what to do next.
+
+**ReAct is the pattern that solves this.**
+
+## ReAct: Think While You Act
+
+ReAct stands for "Reasoning + Acting," introduced by Yao et al. in 2022. The core idea is to have the model **alternate between reasoning and acting**, rather than planning all steps upfront before executing.
+
+The traditional approach might be:
+
+```
+1. Model creates a complete plan (5 steps)
+2. Executes each step in order
+3. Returns the final result
+```
+
+The ReAct approach:
+
+```
+1. Think one step → do it → see the result
+2. Based on the result, think about next step → do it → see the result
+3. Repeat until done
+```
+
+This is closer to how humans solve problems — you don't write a complete debugging plan before you start. You follow clues, adjust direction based on findings.
+
+## A Complete ReAct Example
+
+Let's see how the model works in ReAct mode:
+
+```
+User: Our /api/users endpoint response time spiked from 50ms to 2s. Help me investigate.
+
+Thought: Sudden response time spike — could be database slow queries, high server load,
+         or a recent code change. Let me check for recent deployments first.
+
+Action: call get_recent_deployments(service="api", hours=2)
+Observation: A deployment 45 minutes ago, commit message: "add user activity logging"
+
+Thought: Deployment 45 minutes ago — timing matches. The change added user activity logging,
+         which might have added extra database writes in the request path. Let me look at
+         the actual changes.
+
+Action: call get_commit_diff(commit="a3f7b2c")
+Observation: The change added a line in the /api/users handler:
+             await db.insert("user_activity_log", { userId, action, timestamp })
+
+Thought: Found it. Every request is synchronously writing to a log table.
+         Let me check the table's status.
+
+Action: call run_query("EXPLAIN SELECT * FROM user_activity_log LIMIT 1")
+Observation: Table has no indexes, already contains 2 million rows
+
+Thought: Confirmed. Every request synchronously writes to a large unindexed table.
+         Solution: make the log writes async and add proper indexes.
+         Let me summarize the findings for the user.
+
+Final answer: Issue identified. The deployment 45 minutes ago added synchronous database
+              log writes to the /api/users path. The target table (user_activity_log) has
+              no indexes and contains 2M rows. Recommendations: 1) Make log writes
+              async (message queue) 2) Add appropriate indexes to user_activity_log
+              3) For quick recovery, consider rolling back the deployment.
+```
+
+Notice that each "Thought" does two things: **interprets the observed result** and **decides the next action**. That's the essence of ReAct.
+
+## Chain of Thought in Agents
+
+You may have heard of **Chain of Thought (CoT)** — making the model "think step by step" to improve reasoning.
+
+In agents, chain of thought isn't just a prompting trick — it's a core component of the reasoning loop:
+
+```
+Without CoT:
+Action → Observation → Action → Observation → Action
+
+With CoT:
+Thought → Action → Observation → Thought → Action → Observation → Thought → Action
+```
+
+The value of CoT in agents:
+
+- **Makes decisions traceable**: You can see why the model chose this tool, why it passed these parameters
+- **Reduces errors**: "Thinking" before acting avoids many impulsive wrong actions
+- **Supports complex reasoning**: When decisions require synthesizing multiple information sources, CoT provides "working memory"
+
+This is why many agent frameworks include instructions like "before each action, explain your reasoning" in the system prompt.
+
+## Single-Step vs Multi-Step: When You Need the Loop
+
+Not every task needs a multi-turn reasoning loop:
+
+**Single-step tool calls** (no loop needed):
+- "What's the weather in Beijing today" → call weather API → answer
+- "Translate this text to English" → answer directly (might not even need tools)
+- "Calculate sin(45°)" → call calculator → answer
+
+**Multi-step reasoning** (loop needed):
+- "Help me debug this issue" → check logs, read code, try fixes, verify
+- "Write a complete login feature" → create files, write code, write tests, run tests
+- "Analyze this data and produce a report" → read data, clean, analyze, generate charts
+
+The rule is simple: **if one step's result affects the next step's decision, you need a loop.**
+
+## Error Handling and Self-Correction
+
+Agents inevitably encounter errors during execution. Good agents can recognize and correct them:
+
+```
+Thought: I need to read the config file
+Action: call read_file(path="/etc/app/config.yaml")
+Observation: Error — file not found
+
+Thought: The path might be wrong. Let me search for the actual location.
+Action: call search_files(pattern="config.yaml")
+Observation: Found ./config/app.yaml
+
+Thought: Found it — the path is ./config/app.yaml
+Action: call read_file(path="./config/app.yaml")
+Observation: Successfully read config contents
+```
+
+This self-correction ability is one of the key advantages of agents. But it has a prerequisite: **tools need to return meaningful error messages.** If a tool returns an empty result without explanation, the model can't figure out what went wrong.
+
+## Terminating the Loop
+
+An agent's reasoning loop can't run forever. It needs to know when to stop:
+
+**Natural completion**: The task is done, and the model provides a final answer.
+
+**Hitting limits**: A preset maximum step count or token limit. Prevents the model from entering pointless loops.
+
+**Model gives up**: The model determines it can't complete the task and returns an explanation.
+
+**Human interruption**: The user cancels or redirects.
+
+In practice, systems typically set a maximum iteration count (e.g., 20 rounds) as a safety net. Without this limit, an agent might loop indefinitely on unsolvable problems, consuming massive amounts of tokens.
+
+## Strengths and Limitations of ReAct
+
+**Strengths:**
+- Flexible: handles situations that can't be anticipated in advance
+- Explainable: every reasoning step is visible
+- Self-correcting: can recover from mistakes
+
+**Limitations:**
+- Each reasoning step consumes tokens — costs add up
+- Longer reasoning chains increase the chance of drifting off target
+- The model might enter repetitive loops (doing the same thing and expecting different results)
+
+## Key Takeaways
+
+1. **ReAct lets the model "think while doing"**, alternating between reasoning and acting rather than planning everything upfront.
+2. **Chain of thought is a core component of the agent reasoning loop**, not just a prompting trick — it makes decisions traceable and reduces errors.
+3. **If one step's result affects the next step's decision, you need a multi-step reasoning loop.**
+4. **Self-correction is a key agent advantage**, but it depends on tools returning meaningful error messages.
+5. **Loops must have termination conditions** — a maximum step count is an essential safety net.

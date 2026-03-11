@@ -1,0 +1,276 @@
+---
+title: "构建你的第一个 Agent"
+order: 6
+tags: ["implementation", "practice", "framework", "safety"]
+prerequisites: ["memory-and-state"]
+---
+
+## 从理论到实践
+
+前面几章我们理解了 Agent 的核心概念——推理循环、工具调用、架构模式、记忆管理。现在把这些拼在一起，从零构建一个能用的 Agent。
+
+我们要构建的是一个**文件分析 Agent**：给它一个目录路径，它会自主地浏览文件、分析代码结构，回答你关于这个项目的问题。
+
+## Agent 循环的最小实现
+
+Agent 的核心是一个 while 循环。以下是用 Python + Anthropic SDK 的最小实现：
+
+```python
+import anthropic
+import json
+import os
+
+client = anthropic.Anthropic()
+
+# 定义工具
+tools = [
+    {
+        "name": "list_directory",
+        "description": "列出目录中的文件和子目录",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "目录路径"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "read_file",
+        "description": "读取文件内容。适用于文本文件，如代码、配置文件、文档等",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+                "limit": {"type": "integer", "description": "最多读取的行数，默认 100"}
+            },
+            "required": ["path"]
+        }
+    },
+    {
+        "name": "search_files",
+        "description": "在目录中搜索包含指定文本的文件",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string", "description": "搜索目录"},
+                "pattern": {"type": "string", "description": "搜索的文本模式"}
+            },
+            "required": ["directory", "pattern"]
+        }
+    }
+]
+
+# 工具执行
+def execute_tool(name, params):
+    if name == "list_directory":
+        path = params["path"]
+        try:
+            entries = os.listdir(path)
+            return json.dumps(entries[:50])  # 限制数量
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    elif name == "read_file":
+        try:
+            with open(params["path"], "r") as f:
+                lines = f.readlines()[:params.get("limit", 100)]
+                return "".join(lines)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    elif name == "search_files":
+        results = []
+        for root, dirs, files in os.walk(params["directory"]):
+            for file in files:
+                filepath = os.path.join(root, file)
+                try:
+                    with open(filepath, "r") as f:
+                        for i, line in enumerate(f, 1):
+                            if params["pattern"] in line:
+                                results.append(f"{filepath}:{i}: {line.strip()}")
+                except:
+                    continue
+        return json.dumps(results[:20])  # 限制结果数量
+
+# Agent 主循环
+def run_agent(user_message):
+    messages = [{"role": "user", "content": user_message}]
+    system = "你是一个文件分析助手。使用提供的工具来浏览和分析项目文件，回答用户的问题。"
+
+    max_iterations = 20
+    iteration = 0
+
+    while iteration < max_iterations:
+        iteration += 1
+
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system,
+            tools=tools,
+            messages=messages
+        )
+
+        # 把模型的回复加入消息历史
+        messages.append({"role": "assistant", "content": response.content})
+
+        # 如果模型不再调用工具，任务完成
+        if response.stop_reason == "end_turn":
+            # 提取最终文本回复
+            for block in response.content:
+                if hasattr(block, "text"):
+                    return block.text
+            return "任务完成。"
+
+        # 处理工具调用
+        tool_results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                result = execute_tool(block.name, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result
+                })
+
+        messages.append({"role": "user", "content": tool_results})
+
+    return "达到最大迭代次数，任务未完成。"
+
+# 使用
+answer = run_agent("分析 ./my-project 的项目结构，告诉我这是什么类型的项目")
+print(answer)
+```
+
+这 100 行代码就是一个完整的 Agent。核心就是 `while` 循环——不断让模型思考和行动，直到它决定给出最终回答，或者达到迭代上限。
+
+## 关键设计决策
+
+### 工具粒度
+
+上面的例子有三个工具：列目录、读文件、搜索。这个粒度是有意为之的：
+
+- **太少**（只有一个 "analyze_project" 工具）：模型失去了灵活性，不能按需探索
+- **太多**（20 个细粒度工具）：模型容易选错工具，上下文被工具定义占满
+- **刚好**（3-8 个）：模型能清晰区分每个工具的用途
+
+一个实用的经验：**先从 3-5 个核心工具开始，根据模型实际表现再调整。**
+
+### 工具描述
+
+对比这两个描述：
+
+```
+❌ "读取文件"
+✅ "读取文件内容。适用于文本文件，如代码、配置文件、文档等"
+```
+
+好的描述告诉模型三件事：**做什么、什么时候用、什么时候不用。** 在面向 Agent 的工具描述中要比面向人的更具体。
+
+### 错误处理
+
+注意上面代码中每个工具执行都包裹了 try-catch，返回清晰的错误信息。这是因为：
+
+1. Agent 执行过程中**一定会遇到错误**（路径不存在、权限不足、文件太大）
+2. 清晰的错误信息让模型能**自我纠正**
+3. 如果工具直接抛异常导致程序崩溃，Agent 循环就中断了
+
+## 安全考量
+
+让 AI 自主执行操作，安全是最大的顾虑。
+
+### 最小权限原则
+
+只给 Agent 它需要的能力，不多给。上面的例子只能读文件和搜索，不能写文件、不能执行命令、不能访问网络。
+
+```python
+# 危险：给 Agent 执行任意命令的能力
+def execute_command(cmd):
+    return os.popen(cmd).read()  # 永远不要这样做
+
+# 安全：限定在特定目录的只读操作
+def read_file(path):
+    # 验证路径在允许的目录内
+    allowed_dir = "/home/user/projects"
+    real_path = os.path.realpath(path)
+    if not real_path.startswith(allowed_dir):
+        return {"error": "路径不在允许范围内"}
+    # ... 读取文件
+```
+
+### 路径验证
+
+Agent 可能构造出意想不到的路径——比如 `../../etc/passwd`。**永远验证路径是否在允许的范围内。**
+
+### 操作确认
+
+对于有副作用的操作（写文件、发请求、删除数据），加一层人类确认：
+
+```python
+def execute_tool_with_confirmation(name, params):
+    if name in ["write_file", "delete_file", "send_request"]:
+        print(f"Agent 想要执行: {name}({params})")
+        confirm = input("是否允许？(y/n): ")
+        if confirm != "y":
+            return {"error": "用户拒绝了此操作"}
+    return execute_tool(name, params)
+```
+
+### 资源限制
+
+防止 Agent 失控：
+- **最大迭代次数**：前面代码中的 `max_iterations = 20`
+- **token 预算**：限制单次任务的最大 token 消耗
+- **超时**：长时间未完成的任务应该被终止
+- **文件大小限制**：避免读取巨大文件撑爆上下文
+
+## 调试与评估
+
+Agent 比普通 LLM 调用更难调试——因为行为不确定，同样的输入可能走完全不同的路径。
+
+### 日志是最重要的工具
+
+记录 Agent 的每一步：思考了什么、调用了什么工具、得到了什么结果。
+
+```python
+# 在 Agent 循环中添加日志
+for block in response.content:
+    if hasattr(block, "text"):
+        print(f"[思考] {block.text}")
+    if block.type == "tool_use":
+        print(f"[工具] {block.name}({json.dumps(block.input)})")
+```
+
+### 评估标准
+
+怎么判断 Agent 是否在正确工作？
+
+- **任务完成率**：给一组测试任务，统计成功完成的比例
+- **步骤效率**：完成任务用了多少步？有没有冗余步骤？
+- **错误恢复**：遇到错误时是否成功恢复？
+- **成本**：每个任务消耗多少 token？
+
+不要追求 100% 的成功率。Agent 的价值在于它能自主处理大部分情况，剩下的交给人类兜底。
+
+## 主流 Agent 框架
+
+我们从零构建 Agent 是为了理解原理。在实际项目中，你可能会用现成的框架：
+
+**Anthropic Agent SDK**：Anthropic 官方出品，轻量级，提供 Agent 循环、工具注册、多 Agent 编排（handoff）等基础能力。适合直接使用 Claude 模型的场景。
+
+**LangGraph**：LangChain 生态的一部分，用图（Graph）来定义 Agent 的工作流。适合需要复杂流程控制的场景。灵活但学习曲线较陡。
+
+**CrewAI**：专注于多 Agent 协作，用"角色"和"任务"来组织 Agent 团队。适合模拟团队协作的场景。
+
+**Mastra**：TypeScript 生态的 Agent 框架，内置工作流引擎、RAG、评估等功能。适合 Node.js 技术栈的项目。
+
+选框架的原则和选模型一样：**先理解你的需求，再选工具。** 如果你的场景用 100 行代码就能实现，不需要引入框架。
+
+## 要点总结
+
+1. **Agent 的核心就是一个 while 循环**——调用模型、执行工具、把结果喂回去，重复直到完成。100 行代码就能实现一个可用的 Agent。
+2. **工具设计决定 Agent 的上限**：3-8 个核心工具、清晰的描述、有意义的错误信息。
+3. **安全是第一优先级**：最小权限、路径验证、操作确认、资源限制。让 AI 自主执行 ≠ 让 AI 无限制执行。
+4. **日志和评估不可或缺**：记录每一步，用任务完成率和步骤效率来衡量 Agent 质量。
+5. **框架是可选的**——先理解原理再选框架，简单场景不需要框架。

@@ -1,0 +1,167 @@
+---
+title: "Memory and State Management"
+order: 5
+tags: ["memory", "context", "state", "persistence"]
+prerequisites: ["agent-patterns"]
+---
+
+## The Agent Memory Problem
+
+When you chat with ChatGPT, you might notice: it remembers what was said in this conversation, but not what you discussed last week. Close the window and reopen — everything starts from zero.
+
+For simple Q&A, that's fine. But for agents, memory is a core problem:
+
+- A coding agent needs to remember which files it has read and what approaches it has tried
+- A customer service agent needs to remember what issues the user previously reported
+- A research agent working on a long-term project needs to recall earlier findings
+
+**An agent without memory is like an employee with amnesia — starting from scratch every time.**
+
+## Three Types of Memory
+
+We can categorize agent memory into three types, analogous to human memory:
+
+### Short-Term Memory: The Context Window
+
+The most direct form of memory — all messages in the current conversation. Everything the model can see lives in this window.
+
+```
+[System prompt] + [User msg 1] + [Assistant reply 1] + [Tool call 1] + [Tool result 1] + ...
+```
+
+Characteristics:
+- **Immediately available**: The model sees it directly, no retrieval needed
+- **Capacity-limited**: Bounded by the context window (4K - 1M tokens)
+- **Gone when the session ends**: Doesn't persist across conversations
+
+For single tasks, short-term memory is usually sufficient. A bug-fixing agent completing all work in one conversation has all intermediate results in context.
+
+### Working Memory: Task Intermediate State
+
+When tasks are too complex for short-term memory alone, the agent needs a "scratchpad" for intermediate state.
+
+```
+Current plan:
+- [✓] Read project structure
+- [✓] Find relevant files
+- [→] Modify src/api.ts
+- [ ] Update tests
+- [ ] Run tests to verify
+
+Key findings:
+- Project uses Express framework
+- Database is PostgreSQL
+- API version is v2
+```
+
+Working memory can be implemented as:
+- **Dynamic sections in the system prompt**: Updated with current state at each step
+- **A dedicated scratchpad tool**: The agent can actively write and read notes
+- **A structured state object**: Maintained at the code level as a task state
+
+The key value of working memory is **keeping the model from getting lost**. In a 20-step reasoning chain, without explicit state tracking, the model may forget what it's doing or what it has already done.
+
+### Long-Term Memory: Cross-Session Persistence
+
+When agents need to retain information across multiple conversations, they need long-term memory.
+
+Common implementations:
+
+**Vector database storage**: Encode important information as vectors and store in databases like Pinecone or Chroma. Retrieve via semantic search when needed later.
+
+```
+Session 1: Agent learns user prefers TypeScript, project uses monorepo structure
+            → stored in vector database
+
+Session 2: Agent retrieves previous information
+            → writes code in TypeScript, follows monorepo structure
+```
+
+**File system storage**: Write memories directly to files. Simple but effective.
+
+```
+Claude Code's CLAUDE.md is a form of long-term memory —
+it stores project conventions and tech stack info in a file,
+read on every startup.
+```
+
+**Database storage**: Store user preferences, historical decisions, and project information in a structured format.
+
+The hard part of long-term memory isn't storage — it's **retrieval**. How do you find the right memory at the right time? If you've stored a thousand pieces of information but can't retrieve the one you need, it's as good as not stored.
+
+## Context Window Management
+
+Even with 100K-1M context windows, complex tasks can exhaust them. An agent making 50 tool calls, each returning hundreds of lines — context fills up fast.
+
+Several common management strategies:
+
+### Truncation
+
+The simplest approach — when the window is full, discard the earliest messages.
+
+```
+Keep: [System prompt] + ... + [most recent N turns]
+Discard: [early conversation content]
+```
+
+The problem: discarded content may contain critical information. The model might redo work it has already done.
+
+### Summarization
+
+Compress earlier conversation into summaries, preserving key information in fewer tokens:
+
+```
+Original (2000 tokens):
+  [20 turns of project structure exploration and discussion]
+
+Compressed (200 tokens):
+  "Project is a Next.js app using TypeScript with PostgreSQL.
+   Main APIs are in src/api/. Bug confirmed in the user route."
+```
+
+This is a trade-off between space and information fidelity — summaries may lose details.
+
+### Sliding Window + Keyframes
+
+Keep the most recent N turns plus a few "keyframes" (important milestone information):
+
+```
+[System prompt]
+[Keyframe: project structure and tech stack]
+[Keyframe: confirmed bug cause]
+[Most recent 10 turns]
+```
+
+This combines the advantages of truncation and summarization — detailed recent context plus preserved historical milestones.
+
+## How Real Products Handle This
+
+**Claude Code**: Uses the file system as "external memory." CLAUDE.md files store project-level long-term memory. Automatic context compression summarizes earlier content as conversations grow long.
+
+**ChatGPT**: Offers a Memory feature that explicitly stores user preferences and facts. Users can view and delete these memories.
+
+**Cursor**: Achieves long-term memory through .cursorrules files and project indexing. Reads the index each time a project is opened to understand code structure.
+
+The common pattern: **move information that needs persistence outside the model's context window**, and retrieve it when needed.
+
+## Memory System Design Trade-offs
+
+There's no perfect memory solution — every approach involves trade-offs:
+
+| Aspect | Pure Context | Summarization | Vector Retrieval | File System |
+|--------|-------------|---------------|-----------------|-------------|
+| Implementation complexity | Low | Medium | High | Low |
+| Information fidelity | High | Medium | Depends on retrieval | High |
+| Cross-session persistence | No | No | Yes | Yes |
+| Capacity | Window-limited | Window-limited | Nearly unlimited | Nearly unlimited |
+| Latency | None | Yes (summarization) | Yes (retrieval) | Yes (file reads) |
+
+Practical advice: **start with the simplest approach (pure context), and add complexity only when you hit problems.** In most scenarios, a large enough context window plus simple summarization is sufficient.
+
+## Key Takeaways
+
+1. **Agents have three types of memory**: short-term (context window), working memory (task intermediate state), and long-term (cross-session persistence).
+2. **Working memory prevents the model from getting lost in long tasks** — implement via scratchpad, state objects, or similar mechanisms.
+3. **The hard part of long-term memory is retrieval, not storage** — stored information you can't find is as good as not stored.
+4. **Three context management strategies**: truncation, summarization, and sliding window + keyframes — each with their own trade-offs.
+5. **Start simple** — pure context is sufficient for most scenarios. Consider more complex solutions only when you hit bottlenecks.

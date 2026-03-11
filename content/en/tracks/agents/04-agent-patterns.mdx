@@ -1,0 +1,161 @@
+---
+title: "Agent Architecture Patterns"
+order: 4
+tags: ["architecture", "patterns", "multi-agent", "orchestration"]
+prerequisites: ["react-loop"]
+---
+
+## More Than One Kind of Agent
+
+So far, we've discussed the simplest agent form: one model + a set of tools, solving problems in a single loop.
+
+But real-world task complexity varies enormously. "Check the weather" and "refactor this monolith into microservices" clearly need different architectures.
+
+This chapter covers several common agent architecture patterns and when each one fits.
+
+## Pattern 1: Single Agent
+
+The simplest architecture — what we've been discussing in previous chapters:
+
+```
+User request → [Agent: LLM + toolset] → Final result
+                    ↻ reasoning loop
+```
+
+One model handles everything — understanding intent, planning steps, calling tools, synthesizing results.
+
+**When to use:**
+- Well-scoped tasks with a limited number of tools (under 10)
+- No deep domain expertise required
+- Claude Code handling a single programming task is this pattern
+
+**Limitations:**
+- Too many tools degrades the model's tool selection accuracy
+- Model must be both "planner" and "executor," demanding strong reasoning
+- Context window may be insufficient
+
+## Pattern 2: Router
+
+When you have multiple domain-specific capabilities, a routing layer can classify the task type and dispatch to specialized handlers:
+
+```
+User request → [Router Agent]
+                  ├→ Code question → [Coding Agent + code tools]
+                  ├→ Data analysis → [Analysis Agent + data tools]
+                  └→ Docs question → [Docs Agent + search tools]
+```
+
+The router agent is typically lightweight — it doesn't solve problems, just classifies and forwards.
+
+**When to use:**
+- Customer service systems (different issue types handled by different specialists)
+- Multi-capability assistants (one entry point, multiple specialized abilities)
+
+**Advantages:**
+- Each sub-agent only needs to know its own domain's tools, reducing complexity
+- Different domains can use different models (small model for simple classification, large model for complex reasoning)
+
+**Caveat:** Routing decisions can be wrong. A misclassified request gets completely irrelevant handling.
+
+## Pattern 3: Orchestrator-Worker
+
+A "brain" decomposes and coordinates the task, while multiple "hands" execute specific steps:
+
+```
+User request → [Orchestrator Agent]
+                  ├→ Assign subtask 1 → [Worker A] → result
+                  ├→ Assign subtask 2 → [Worker B] → result
+                  └→ Assign subtask 3 → [Worker C] → result
+                          ↓
+               [Orchestrator synthesizes results] → Final output
+```
+
+The orchestrator is responsible for:
+- Breaking complex tasks into independently executable subtasks
+- Assigning subtasks to appropriate workers
+- Collecting and synthesizing results
+- Deciding whether to retry or adjust the plan if a subtask fails
+
+Workers only need to focus on completing their assigned tasks.
+
+**When to use:**
+- Parallelizable large tasks (analyzing multiple files simultaneously, researching multiple directions at once)
+- Tasks requiring a combination of different expertise
+
+**Practical example:** You ask AI to do a code review. The orchestrator might decompose it into: Worker A checks code style, Worker B checks security vulnerabilities, Worker C checks performance issues. All three run in parallel, results are combined at the end.
+
+## Pattern 4: Multi-Agent Collaboration
+
+Multiple agents with different roles and perspectives interact to complete a task:
+
+```
+[Product Manager Agent] ←→ [Developer Agent] ←→ [Tester Agent]
+         ↓                        ↓                    ↓
+    Define requirements       Write code           Write tests
+         ↓                        ↓                    ↓
+    Review implementation ←→  Modify code  ←→    Report issues
+```
+
+The difference from orchestrator-worker: **there's no central controller here — agents collaborate as peers.**
+
+Each agent has its own system prompt, toolset, and perspective. They coordinate through message passing.
+
+**When to use:**
+- Tasks requiring adversarial thinking (one proposes, another critiques)
+- Simulating team collaboration processes
+- Tasks needing multi-perspective review
+
+**Caveat:** This is the most complex pattern. Inter-agent communication can spiral out of control — messages multiply, drift off topic, or enter meaningless back-and-forth. Communication protocols and termination conditions need careful design.
+
+## Pattern 5: Human-in-the-Loop
+
+Not all decisions should be delegated to AI. Human-in-the-loop introduces human judgment at critical points:
+
+```
+Agent executing → reaches critical decision point
+                    ├→ Low risk: continue automatically
+                    └→ High risk: pause, request human confirmation
+                                    ├→ Human approves → continue
+                                    └→ Human rejects → adjust plan
+```
+
+Typical checkpoints requiring human confirmation:
+- Deleting files or data
+- Sending external requests (emails, API calls)
+- Operations exceeding cost thresholds
+- Modifying production configurations
+- Any irreversible operation
+
+**Claude Code is a prime example of this pattern.** It autonomously reads files and searches code, but requests your confirmation before writing files or executing commands.
+
+**Advantages:**
+- Significantly improved safety
+- Users maintain a sense of control
+- Fallback when agent capabilities are insufficient
+
+**Trade-off:** Interrupts the agent's autonomy, requires humans to stay present.
+
+## Choosing the Right Pattern
+
+| Pattern | Complexity | Use Case | Example Products |
+|---------|-----------|----------|-----------------|
+| Single Agent | Low | Single domain, clear tasks | Simple AI assistants |
+| Router | Medium | Multi-domain, needs classification | Smart customer service |
+| Orchestrator-Worker | Medium-High | Decomposable large tasks | Code review, research reports |
+| Multi-Agent | High | Multi-perspective, adversarial thinking | Team simulation |
+| Human-in-the-Loop | Medium | Automation with safety requirements | Claude Code, Cursor |
+
+A practical principle: **start with the simplest pattern and only upgrade when you hit a bottleneck.**
+
+If a single agent can't handle it, try adding a router first. If routing isn't enough, consider orchestrator-worker. Multi-agent collaboration is the last resort — powerful but hardest to control.
+
+Human-in-the-loop isn't a standalone choice but a **safety layer that can be added to any pattern**. Nearly all production agents should have some form of human oversight.
+
+## Key Takeaways
+
+1. **Single agent is the starting point**, suitable for well-scoped tasks. Upgrade when tools are too many or tasks too complex.
+2. **Router pattern uses a lightweight classifier to dispatch tasks**, reducing each sub-agent's complexity.
+3. **Orchestrator-worker suits parallelizable large tasks** — one brain coordinating multiple workers.
+4. **Multi-agent collaboration is the most powerful and most complex** — communication and termination conditions need careful design.
+5. **Human-in-the-loop is a safety layer, not a standalone pattern** — introduce human judgment at critical points. Nearly all production agents need it.
+6. **Start simple, upgrade as needed.** Architecture complexity should match task complexity.

@@ -1,0 +1,220 @@
+---
+title: "Tool Use"
+order: 2
+tags: ["tool-use", "function-calling", "api"]
+prerequisites: ["what-is-agent"]
+---
+
+## The Natural Limitations of LLMs
+
+LLMs are powerful, but they have hard limitations:
+
+- **Knowledge has a cutoff date**: They don't know today's weather, current stock prices, or just-published news
+- **Can't execute code**: They can write code but can't actually run it
+- **Can't access external systems**: They can't read your files, query your database, or call your APIs
+- **Unreliable at math**: They're doing probabilistic sampling, not arithmetic
+
+These aren't about the model being insufficiently smart — it's trapped in a "text generation only" sandbox.
+
+**Tool Use is how you break out of that sandbox.**
+
+## How Function Calling Works
+
+The core idea behind tool use is simple:
+
+1. You tell the model: here are some tools, what each does, and what parameters they need
+2. When answering a question, if the model needs a tool, it generates a "call request"
+3. Your code executes the call and returns the result to the model
+4. The model uses the result to continue its response
+
+Important: **the model doesn't execute tools itself.** It only decides "which tool to call with what parameters" and generates structured data. Your code handles the actual execution.
+
+The flow looks like this:
+
+```
+User: What's the temperature in Beijing right now?
+
+Model → generates tool call: get_weather(location="Beijing")
+                    ↓
+Your code executes get_weather("Beijing") → returns "22°C, sunny"
+                    ↓
+Model receives result → generates final answer: "It's currently 22°C and sunny in Beijing."
+```
+
+## Defining Tools
+
+Tools are described using JSON Schema, telling the model each tool's name, purpose, and parameter format. Here's a weather tool example:
+
+```json
+{
+  "name": "get_weather",
+  "description": "Get current weather information for a specified city",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "location": {
+        "type": "string",
+        "description": "City name, e.g., 'Beijing', 'New York'"
+      },
+      "unit": {
+        "type": "string",
+        "enum": ["celsius", "fahrenheit"],
+        "description": "Temperature unit"
+      }
+    },
+    "required": ["location"]
+  }
+}
+```
+
+**The description is critical.** The model uses it to understand what a tool does and when to use it. Vague descriptions lead to poor tool selection.
+
+## Code Example
+
+Implementing a tool-augmented conversation with the Anthropic SDK:
+
+```python
+import anthropic
+import json
+
+client = anthropic.Anthropic()
+
+# Define tools
+tools = [
+    {
+        "name": "get_weather",
+        "description": "Get current weather for a specified city",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name"
+                }
+            },
+            "required": ["location"]
+        }
+    }
+]
+
+# Your tool implementation
+def get_weather(location):
+    # In a real project, this would call a weather API
+    return {"temperature": 22, "condition": "sunny", "city": location}
+
+# Send request
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=1024,
+    tools=tools,
+    messages=[{"role": "user", "content": "What's the weather like in Beijing?"}]
+)
+
+# Check if model wants to call a tool
+if response.stop_reason == "tool_use":
+    # Find the tool call
+    tool_block = next(b for b in response.content if b.type == "tool_use")
+
+    # Execute the tool
+    result = get_weather(**tool_block.input)
+
+    # Return result to the model
+    follow_up = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        tools=tools,
+        messages=[
+            {"role": "user", "content": "What's the weather like in Beijing?"},
+            {"role": "assistant", "content": response.content},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_block.id,
+                        "content": json.dumps(result)
+                    }
+                ]
+            }
+        ]
+    )
+    print(follow_up.content[0].text)
+    # → "It's currently 22°C and sunny in Beijing."
+```
+
+The core flow is three steps: **define tools → detect calls → execute and return results.**
+
+## How the Model Decides Whether to Use Tools
+
+When the model receives your message, it faces a choice: answer directly, or call a tool first?
+
+This decision is based on several factors:
+
+- **Does the question need external information**: "Beijing weather" needs a tool, "what is recursion" doesn't
+- **Does the tool description match**: More precise descriptions lead to better tool selection
+- **The model's reasoning capability**: Stronger models are better at knowing when to use which tool
+
+You don't need to (and shouldn't) hardcode rules like "when the user asks about weather, call the weather tool." The model decides on its own. This is exactly what gives agents their flexibility.
+
+## Multiple Tool Calls in One Conversation
+
+In real scenarios, models often need to call multiple tools in sequence:
+
+```
+User: Compare the weather in Beijing and Shanghai, and recommend which city to visit this weekend
+
+Model → calls get_weather(location="Beijing")
+      → calls get_weather(location="Shanghai")
+
+After receiving both results:
+Model → "Beijing is 22°C and sunny. Shanghai is 18°C with rain. I'd recommend Beijing — great for outdoor activities."
+```
+
+Some models support **parallel tool calls** — issuing multiple call requests simultaneously. This significantly reduces interaction rounds and latency.
+
+There's also a more complex scenario: **chained calls**, where one tool's result determines the next tool's input:
+
+```
+User: Find the most recently modified file and show me what changed
+
+Model → calls list_files(sort="modified", limit=1) → returns "src/api.ts"
+Model → calls read_file(path="src/api.ts") → returns file contents
+Model → calls git_diff(path="src/api.ts") → returns recent changes
+Model → synthesizes information and responds
+```
+
+This kind of multi-step tool calling is the foundation of agent behavior.
+
+## Common Tool Types
+
+In practice, tools fall into several categories:
+
+| Type | Examples | Purpose |
+|------|----------|---------|
+| Information retrieval | Web search, database queries, file reading | Get information the model doesn't have |
+| Code execution | Python sandbox, shell commands | Run computations, process data |
+| External APIs | Weather, maps, payments, email | Interact with external services |
+| File operations | Read/write files, create directories | Operate on the local filesystem |
+| System operations | Screenshots, clicks, typing | Operate computer interfaces (Computer Use) |
+
+Tool design directly determines an agent's capability ceiling — an agent can only do what you give it tools to do.
+
+## Tool Design Considerations
+
+Good tool design makes agents more reliable:
+
+**Clear descriptions**: These are for the model, not humans. Explain what the tool does, when it should be used, and when it shouldn't.
+
+**Right granularity**: Too coarse (one tool does ten things) and the model won't know when to use it. Too fine (a separate tool to read a single line) and call counts explode.
+
+**Stable return formats**: The model needs to understand tool results. Structured JSON is far easier to parse than free-form text.
+
+**Useful error messages**: When tools fail, return clear error descriptions instead of empty results or cryptic status codes. This lets the model understand what happened and attempt recovery.
+
+## Key Takeaways
+
+1. **Tool use transforms LLMs from "can talk" to "can do."** It's the foundational capability for agents.
+2. **The model doesn't execute tools — it only generates call requests.** Your code handles execution, which is the key point for safety control.
+3. **Tools are defined via JSON Schema, and description is the most important field.** The model relies on descriptions to decide when and how to use tools.
+4. **Multi-step tool calling is the foundation of agent behavior.** Chained calls let the model handle complex tasks requiring multiple steps.
+5. **Tool design determines the agent's capability ceiling.** Clear descriptions, appropriate granularity, and stable return formats are essential.

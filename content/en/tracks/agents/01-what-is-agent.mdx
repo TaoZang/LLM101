@@ -1,0 +1,163 @@
+---
+title: "What is an AI Agent"
+order: 1
+tags: ["agent", "basics", "autonomy"]
+---
+
+## From Tool to Autonomous Executor
+
+You've probably used ChatGPT or Claude — type a question, get an answer. That's the most basic way to use an LLM: **human asks, model answers, one turn at a time.**
+
+But what if you want AI to complete a real task? Something like:
+
+> "Find the cause of this bug, locate the relevant code, write a fix, and run the tests to make sure nothing broke."
+
+That's not a single question — it's a series of steps requiring **autonomous decision-making**. The model needs to figure out what to do, which tools to use, and what to do next based on results.
+
+That's an **Agent** — an AI system that can autonomously plan and execute tasks.
+
+## The Core Agent Loop
+
+An agent works in a loop:
+
+```
+Perceive → Reason → Act → Observe → Reason → Act → ... → Done
+```
+
+Let's walk through a concrete example. You tell a coding agent: "Find all unused dependencies in the project and remove them."
+
+1. **Reason**: I need to check what dependencies are in package.json
+2. **Act**: Read package.json
+3. **Observe**: The file lists 15 dependencies
+4. **Reason**: I need to search the code for references to each dependency
+5. **Act**: Search src/ for "lodash" references
+6. **Observe**: No references found
+7. **Reason**: lodash is unused, continue checking the next one...
+8. **...(multiple rounds)**
+9. **Act**: Run `npm uninstall lodash moment` to remove unused dependencies
+10. **Act**: Run tests to confirm nothing broke
+
+The key insight: **every decision is made by the model itself.** You didn't write code telling it "first read the file, then search" — it planned that workflow on its own.
+
+## Agent vs Chatbot vs Workflow
+
+These three concepts are often confused, but they're fundamentally different:
+
+### Chatbot
+
+```
+User: What's wrong with this code?
+AI:   There's a null pointer exception. I'd suggest adding a null check.
+User: Can you fix it?
+AI:   Here's the modified code...
+```
+
+**Humans drive every step.** Without your input, it does nothing.
+
+### Workflow
+
+```
+Trigger: New Pull Request received
+Step 1: Run code style check → Pass
+Step 2: Run unit tests → Pass
+Step 3: Generate code review comments
+Step 4: Send notification
+```
+
+**A predefined, fixed process.** What happens at each step is hardcoded — no dynamic decision-making involved.
+
+### Agent
+
+```
+User: Fix this CI failure for me
+Agent thinks: Let me look at the CI error logs
+Agent acts: Fetch CI logs → finds test failure
+Agent thinks: Let me check the failing test case
+Agent acts: Read test file → API response format changed
+Agent thinks: Need to check the API changes
+Agent acts: View recent API commits
+Agent thinks: Got it — API response added a nesting level, tests need updating
+Agent acts: Modify test code
+Agent acts: Re-run tests → all passing
+```
+
+**The AI decides each step.** It dynamically adjusts based on what it observes, rather than following a pre-written script.
+
+The core distinction:
+
+| | Chatbot | Workflow | Agent |
+|---|---|---|---|
+| Who decides | Human | Predefined code | AI model |
+| Flexibility | High (but needs human) | Low (fixed process) | High (autonomous) |
+| Task type | Single-turn Q&A | Fixed-process tasks | Open-ended complex tasks |
+| Predictability | Depends on model | High | Low |
+
+## What Makes Agents Possible
+
+Agents didn't appear out of nowhere. They depend on several capabilities maturing:
+
+### 1. Tool Use
+
+LLMs can only generate text by themselves. But if you tell them "you can call these tools," they can:
+- Read and write files
+- Execute code
+- Search the web
+- Call APIs
+- Query databases
+
+**Tools transform LLMs from "can only talk" to "can actually do."** This is the foundational capability for agents — we'll cover it in detail in the next chapter.
+
+### 2. Strong Enough Reasoning
+
+An agent needs the model to:
+- Break complex tasks into sub-steps
+- Adjust plans based on tool results
+- Know when a task is complete
+- Recognize and correct its own mistakes
+
+This requires strong reasoning ability, which is why agents only became practical with GPT-4-class models. Smaller models tend to lose their way in multi-step reasoning.
+
+### 3. Long Enough Context Windows
+
+A complex task might involve a dozen tool calls, each producing results. All that intermediate information needs to stay in context so the model can make correct next-step decisions.
+
+Early models had 4K-8K context windows, severely limiting what agents could do. Today's 100K-1M windows let agents handle far more complex tasks.
+
+## Real-World Agents
+
+Agents are not a concept — they're real products:
+
+**Coding Agents**
+- **Claude Code**: Autonomously reads code, writes code, runs tests, and fixes bugs in the terminal
+- **Cursor / Windsurf**: Understands entire projects in the IDE, autonomously makes code changes
+- **GitHub Copilot Agent**: Automatically handles Issues and submits Pull Requests
+
+**General-Purpose Agents**
+- **Computer Use**: Directly operates computer screens — clicking, typing, taking screenshots, using software like a human
+- **Deep Research**: Given a research topic, autonomously searches, reads, synthesizes information, and produces a full report
+
+**Specialized Agents**
+- **Customer Service Agents**: Understand user issues, query knowledge bases, escalate to humans when needed
+- **Data Analysis Agents**: Given an analysis request, autonomously write SQL, generate charts, and draw conclusions
+
+What these products share: you provide a goal, and the agent figures out how to achieve it — no step-by-step guidance needed.
+
+## Agent Limitations
+
+Agents are powerful but far from perfect:
+
+**Unpredictability**: The same task may lead to completely different execution paths. This is problematic for scenarios requiring consistency.
+
+**Error Accumulation**: Each step can go wrong, and more steps mean higher overall failure probability. A 10-step task with 95% accuracy per step yields only ~60% overall success rate.
+
+**Cost**: Agents make multiple model calls and tool invocations, consuming far more tokens than a single conversation turn. A complex task might cost several dollars or more.
+
+**Safety**: Letting AI execute actions autonomously means it might do things you didn't expect — deleting files, sending requests, modifying data. **Controlling the agent's permission boundaries** is a critical engineering challenge.
+
+## Key Takeaways
+
+1. **Agent = LLM + Tools + Autonomous Decision Loop.** It doesn't just answer questions — it plans and executes tasks on its own.
+2. **The fundamental difference between Agents and Chatbots/Workflows is who makes decisions.** Agents use AI models for dynamic decision-making, not humans or predefined code.
+3. **Three key technologies make agents viable**: tool use, strong reasoning, and long context windows.
+4. **Agents are already deployed in coding, research, customer service, and more**, but still face challenges in predictability, error accumulation, cost, and safety.
+5. **This is a directional shift in AI applications** — from "AI as a tool" to "AI as an executor." Understanding agents is key to understanding the next generation of AI applications.
