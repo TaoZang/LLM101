@@ -40,29 +40,42 @@ export default async function LessonPage({
     <div>
       <article className="prose">
         <h1>{lessonData.title}</h1>
-        <MDXRemote source={lessonData.content} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
+        <MDXRemote
+          source={lessonData.content}
+          options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }}
+        />
       </article>
 
-      <nav className="flex justify-between mt-16 pt-8 border-t border-stone-200">
+      <nav className="flex items-stretch gap-4 mt-16 pt-8 border-t border-stone-200">
         {prev ? (
           <Link
             href={`/tracks/${slug}/${prev.slug}`}
-            className="text-sm text-stone-500 hover:text-stone-900 transition-colors"
+            className="focus-ring group flex-1 py-3 px-4 rounded-lg hover:bg-white/70 transition-colors text-left"
           >
-            {t("prev")}: {prev.title}
+            <span className="text-xs text-stone-400 mb-1 block">
+              {t("prev")}
+            </span>
+            <span className="text-sm text-stone-600 group-hover:text-stone-900 transition-colors">
+              {prev.title}
+            </span>
           </Link>
         ) : (
-          <span />
+          <div className="flex-1" />
         )}
         {next ? (
           <Link
             href={`/tracks/${slug}/${next.slug}`}
-            className="text-sm text-stone-500 hover:text-stone-900 transition-colors"
+            className="focus-ring group flex-1 py-3 px-4 rounded-lg hover:bg-white/70 transition-colors text-right"
           >
-            {t("next")}: {next.title}
+            <span className="text-xs text-stone-400 mb-1 block">
+              {t("next")}
+            </span>
+            <span className="text-sm text-stone-600 group-hover:text-stone-900 transition-colors">
+              {next.title}
+            </span>
           </Link>
         ) : (
-          <span />
+          <div className="flex-1" />
         )}
       </nav>
     </div>

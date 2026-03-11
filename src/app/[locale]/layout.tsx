@@ -13,7 +13,6 @@ const sourceSans = Source_Sans_3({
   variable: "--font-source-sans",
 });
 
-
 type Locale = (typeof routing.locales)[number];
 
 export async function generateMetadata({

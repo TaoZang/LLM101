@@ -19,20 +19,23 @@ export function Header() {
   return (
     <header className="border-b border-stone-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
       <nav className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="font-semibold text-lg tracking-tight">
+        <Link
+          href="/"
+          className="focus-ring font-semibold text-lg tracking-tight hover:text-stone-700 transition-colors"
+        >
           {tSite("title")}
         </Link>
 
         <div className="flex items-center gap-6 text-sm">
           <Link
             href="/tracks"
-            className="text-stone-600 hover:text-stone-900 transition-colors"
+            className="focus-ring text-stone-600 hover:text-stone-900 transition-colors"
           >
             {t("tracks")}
           </Link>
           <button
             onClick={switchLocale}
-            className="text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
+            className="focus-ring text-stone-500 hover:text-stone-900 transition-colors cursor-pointer"
           >
             {locale === "zh" ? "EN" : "中文"}
           </button>

@@ -21,14 +21,14 @@ export default async function TrackLayout({
   const lessons = getLessons(locale, slug);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12 flex gap-12">
+    <div className="max-w-6xl mx-auto px-6 py-12 lg:flex lg:gap-12">
       <TrackSidebar
         trackSlug={slug}
         trackTitle={meta.title}
         trackColor={track.color}
         lessons={lessons}
       />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1 pt-12 lg:pt-0">{children}</div>
     </div>
   );
 }

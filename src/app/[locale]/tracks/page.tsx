@@ -10,8 +10,8 @@ export default async function TracksPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
-      <h1 className="text-3xl font-bold mb-8">{t("title")}</h1>
-      <div className="space-y-4">
+      <h1 className="text-3xl font-bold tracking-tight mb-8">{t("title")}</h1>
+      <div className="space-y-1">
         {tracks.map((track) => {
           const m = meta[track.slug];
           if (!m) return null;
@@ -20,15 +20,17 @@ export default async function TracksPage() {
             <Link
               key={track.slug}
               href={`/tracks/${track.slug}`}
-              className="flex items-start gap-4 py-5 border-b border-stone-200 hover:border-stone-300 transition-colors"
+              className="focus-ring flex items-start gap-4 py-5 px-4 -mx-4 rounded-lg hover:bg-white/70 transition-colors"
             >
               <div
-                className="w-3 h-3 rounded-full mt-1.5 shrink-0"
+                className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
                 style={{ backgroundColor: track.color }}
               />
-              <div>
+              <div className="min-w-0">
                 <h2 className="font-semibold text-lg mb-1">{m.title}</h2>
-                <p className="text-sm text-stone-500 mb-2">{m.description}</p>
+                <p className="text-sm text-stone-500 mb-2 leading-relaxed">
+                  {m.description}
+                </p>
                 <span className="text-xs text-stone-400">
                   {lessons.length > 0
                     ? `${lessons.length} ${t("lessons")}`

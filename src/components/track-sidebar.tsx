@@ -29,7 +29,7 @@ function SidebarContent({
       <Link
         href={`/tracks/${trackSlug}`}
         onClick={onNavigate}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+        className={`focus-ring flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
           isTrackHome
             ? "text-stone-900"
             : "text-stone-500 hover:text-stone-900"
@@ -52,13 +52,15 @@ function SidebarContent({
               key={lesson.slug}
               href={href}
               onClick={onNavigate}
-              className={`flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors ${
+              className={`focus-ring flex items-center gap-3 px-3 py-1.5 rounded-md text-sm transition-colors ${
                 isActive
-                  ? "text-stone-900 font-medium"
-                  : "text-stone-400 hover:text-stone-700"
+                  ? "text-stone-900 font-medium bg-stone-100"
+                  : "text-stone-400 hover:text-stone-700 hover:bg-stone-100/50"
               }`}
             >
-              <span className="w-4 text-right text-xs shrink-0">{i + 1}</span>
+              <span className="w-4 text-right text-xs shrink-0 tabular-nums">
+                {i + 1}
+              </span>
               <span className="leading-snug">{lesson.title}</span>
             </Link>
           );
@@ -103,7 +105,7 @@ export function TrackSidebar(props: TrackSidebarProps) {
       <div className="lg:hidden fixed top-16 left-0 z-40">
         <button
           onClick={() => setDrawerOpen(true)}
-          className="flex items-center gap-1.5 m-2 px-3 py-1.5 text-sm text-stone-500 bg-white/70 backdrop-blur-sm rounded-lg hover:text-stone-700 hover:bg-white/90 transition-all cursor-pointer"
+          className="focus-ring flex items-center gap-1.5 m-2 px-3 py-1.5 text-sm text-stone-500 bg-white/80 backdrop-blur-sm border border-stone-200/60 rounded-lg shadow-sm hover:text-stone-700 hover:bg-white transition-all cursor-pointer"
           aria-label="Open navigation"
         >
           <svg
@@ -141,7 +143,7 @@ export function TrackSidebar(props: TrackSidebarProps) {
             <div className="flex justify-end mb-4">
               <button
                 onClick={close}
-                className="text-stone-400 hover:text-stone-700 transition-colors cursor-pointer"
+                className="focus-ring p-1 text-stone-400 hover:text-stone-700 transition-colors cursor-pointer rounded-md"
                 aria-label="Close navigation"
               >
                 <svg

@@ -8,8 +8,8 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background-image: radial-gradient(circle, #e7e5e4 0.8px, transparent 0.8px);
-  background-size: 32px 32px;
+  background-image: radial-gradient(circle, #d6d3d1 0.6px, transparent 0.6px);
+  background-size: 28px 28px;
 }
 
 /* Prose styles for MDX content */
@@ -18,6 +18,7 @@ body {
   font-weight: 700;
   margin-bottom: 1rem;
   line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
 .prose h2 {
@@ -25,6 +26,8 @@ body {
   font-weight: 600;
   margin-top: 2.5rem;
   margin-bottom: 0.75rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .prose h3 {
@@ -32,11 +35,17 @@ body {
   font-weight: 600;
   margin-top: 2rem;
   margin-bottom: 0.5rem;
+  line-height: 1.4;
 }
 
 .prose p {
   margin-bottom: 1.25rem;
   line-height: 1.8;
+}
+
+.prose strong {
+  font-weight: 600;
+  color: #1c1917;
 }
 
 .prose ul,
@@ -54,7 +63,8 @@ body {
   background-color: #f5f5f4;
   padding: 0.15rem 0.4rem;
   border-radius: 0.25rem;
-  font-size: 0.9em;
+  font-size: 0.875em;
+  color: #44403c;
 }
 
 .prose pre {
@@ -64,12 +74,14 @@ body {
   border-radius: 0.5rem;
   overflow-x: auto;
   margin-bottom: 1.5rem;
+  border: 1px solid #292524;
 }
 
 .prose pre code {
   background: none;
   padding: 0;
   font-size: 0.875rem;
+  color: inherit;
 }
 
 .prose blockquote {
@@ -77,16 +89,26 @@ body {
   padding-left: 1rem;
   color: #78716c;
   margin-bottom: 1.25rem;
+  font-style: italic;
 }
 
 .prose a {
   color: #6366f1;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
+  text-decoration-color: #6366f180;
+  transition: text-decoration-color 0.15s ease;
 }
 
 .prose a:hover {
   color: #4f46e5;
+  text-decoration-color: #4f46e5;
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid #e7e5e4;
+  margin: 2rem 0;
 }
 
 .prose table {
@@ -101,6 +123,7 @@ body {
   font-weight: 600;
   padding: 0.625rem 0.75rem;
   border-bottom: 2px solid #d6d3d1;
+  color: #1c1917;
 }
 
 .prose td {
@@ -112,10 +135,26 @@ body {
   border-bottom: none;
 }
 
+.prose tr:hover td {
+  background-color: #fafaf9;
+}
+
 .prose ul {
   list-style-type: disc;
 }
 
 .prose ol {
   list-style-type: decimal;
+}
+
+.prose img {
+  border-radius: 0.5rem;
+  margin: 1.5rem 0;
+}
+
+/* Focus ring utility */
+.focus-ring:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 0.375rem;
 }

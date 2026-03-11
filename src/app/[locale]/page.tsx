@@ -10,13 +10,15 @@ export default async function HomePage() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       <section className="py-16 text-center">
-        <h1 className="text-4xl font-bold tracking-tight mb-4">{t("hero")}</h1>
-        <p className="text-lg text-stone-500 mb-8 max-w-2xl mx-auto">
+        <h1 className="text-4xl font-bold tracking-tight mb-4">
+          {t("hero")}
+        </h1>
+        <p className="text-lg text-stone-500 mb-8 max-w-2xl mx-auto leading-relaxed">
           {t("heroSub")}
         </p>
         <Link
           href="/tracks"
-          className="inline-block px-6 py-3 bg-stone-900 text-white rounded-lg text-sm font-medium hover:bg-stone-800 transition-colors"
+          className="focus-ring inline-block px-6 py-3 bg-stone-900 text-white rounded-lg text-sm font-medium hover:bg-stone-800 active:bg-stone-950 transition-colors"
         >
           {t("startLearning")}
         </Link>
@@ -30,7 +32,7 @@ export default async function HomePage() {
             <Link
               key={track.slug}
               href={`/tracks/${track.slug}`}
-              className="block p-5 rounded-xl border border-stone-200/60 hover:border-stone-300 transition-colors"
+              className="focus-ring block p-5 rounded-xl bg-white/70 border border-stone-200/60 hover:bg-white hover:border-stone-300 hover:shadow-sm transition-all"
             >
               <div
                 className="w-2 h-2 rounded-full mb-3"
