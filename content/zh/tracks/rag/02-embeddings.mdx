@@ -1,0 +1,172 @@
+---
+title: "Embedding 与向量表示"
+order: 2
+tags: ["rag", "embeddings", "vectors"]
+---
+
+## 把文本变成数字
+
+计算机不理解"退款政策"和"如何退货"是相似的概念——对它来说，这只是两串不同的字符。
+
+**Embedding**（嵌入）就是把文本转换成一组数字（向量），使得**语义相近的文本在数学空间中距离也相近**。
+
+```
+"如何退货"    → [0.23, -0.45, 0.78, ..., 0.12]  // 768 个数字
+"退款政策"    → [0.25, -0.42, 0.75, ..., 0.15]  // 很接近！
+"今天天气好"  → [-0.31, 0.67, -0.22, ..., 0.89]  // 距离很远
+```
+
+这些向量通常有 768 到 3072 个维度。你不需要理解每个维度代表什么——重要的是，相似概念的向量在这个高维空间中会聚在一起。
+
+## 相似度度量
+
+有了向量，怎么衡量两个文本的相似程度？
+
+### 余弦相似度（Cosine Similarity）
+
+最常用的方法。衡量两个向量方向的夹角：
+
+```
+相似度 = cos(θ) = (A · B) / (|A| × |B|)
+
+结果范围：-1 到 1
+1 = 完全相同方向（非常相似）
+0 = 正交（不相关）
+-1 = 完全相反
+```
+
+```python
+import numpy as np
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+# 示例
+sim = cosine_similarity(embed("如何退货"), embed("退款政策"))
+# 结果可能是 0.89 —— 非常相似
+```
+
+### 点积（Dot Product）
+
+```
+相似度 = A · B = Σ(ai × bi)
+```
+
+当向量已经归一化（长度为 1）时，点积等于余弦相似度。很多 Embedding 模型输出的就是归一化向量，所以实际中两者经常等价。
+
+### 欧氏距离（Euclidean Distance）
+
+```
+距离 = √(Σ(ai - bi)²)
+```
+
+距离越小越相似。和余弦相似度相比，它对向量的大小（magnitude）更敏感。在 Embedding 搜索中用得较少。
+
+**实际建议：大多数场景用余弦相似度就行。**
+
+## Embedding 模型
+
+Embedding 模型是专门训练来生成文本向量的模型，和 GPT、Claude 这样的生成模型不同。
+
+### 主流选项
+
+| 模型 | 维度 | 特点 |
+|---|---|---|
+| OpenAI text-embedding-3-small | 1536 | 便宜，效果好，API 调用 |
+| OpenAI text-embedding-3-large | 3072 | 效果更好，成本更高 |
+| Cohere embed-v3 | 1024 | 多语言表现优秀 |
+| BGE-large (BAAI) | 1024 | 开源，中文效果好 |
+| E5-large-v2 | 1024 | 开源，通用性强 |
+| nomic-embed-text | 768 | 开源，可用 Ollama 本地运行 |
+| jina-embeddings-v2 | 768 | 开源，支持长文本 |
+
+### 选择建议
+
+- **快速开始**：OpenAI text-embedding-3-small，简单好用
+- **需要本地运行**：nomic-embed-text（配合 Ollama）或 BGE
+- **中文场景**：BGE 系列
+- **多语言**：Cohere embed-v3
+
+## 生成 Embedding 的代码
+
+### OpenAI API
+
+```python
+from openai import OpenAI
+
+client = OpenAI()
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input="如何申请退款？"
+)
+
+vector = response.data[0].embedding
+print(f"维度: {len(vector)}")  # 1536
+```
+
+### Ollama（本地）
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"
+)
+
+response = client.embeddings.create(
+    model="nomic-embed-text",
+    input="如何申请退款？"
+)
+
+vector = response.data[0].embedding
+print(f"维度: {len(vector)}")  # 768
+```
+
+### 批量生成
+
+```python
+texts = [
+    "退款政策说明",
+    "如何联系客服",
+    "产品使用指南",
+]
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input=texts  # 支持批量输入
+)
+
+vectors = [item.embedding for item in response.data]
+```
+
+## Embedding 的维度选择
+
+维度越高，能表示的语义信息越丰富，但也意味着：
+- 更大的存储空间
+- 更慢的搜索速度
+- 更高的计算成本
+
+| 维度 | 适用场景 |
+|---|---|
+| 384-768 | 小型项目，资源有限 |
+| 1024 | 通用场景，平衡点 |
+| 1536-3072 | 对精度要求高的场景 |
+
+OpenAI 的 text-embedding-3 系列支持**降维**——你可以用 3072 维模型但只取前 1024 维，在精度和成本之间灵活取舍。
+
+## Embedding 的局限性
+
+**语义≠精确匹配**：Embedding 捕捉的是语义相似度，不是精确匹配。搜索"Python 3.12 release date"可能匹配到"Python 发布历史"，但不一定匹配到包含精确日期的文档。
+
+**跨语言效果不一**：并非所有 Embedding 模型都支持多语言。如果你的文档和查询可能是不同语言，选择支持多语言的模型。
+
+**最大长度限制**：每个模型都有输入长度限制（通常 512-8192 tokens）。超出限制的文本会被截断。这就是为什么我们需要"分块"（Chunking）——下一章的主题。
+
+## 要点总结
+
+1. **Embedding 把文本转为向量**，使得语义相近的文本在向量空间中距离相近。这是 RAG 检索的基础。
+2. **余弦相似度是最常用的相似度度量**。值越接近 1，两个文本越相似。
+3. **选模型看场景**：快速开始用 OpenAI API，需要本地运行用 nomic-embed-text 或 BGE，中文场景用 BGE。
+4. **维度是精度和成本的权衡**。大多数场景 768-1024 维就够了。

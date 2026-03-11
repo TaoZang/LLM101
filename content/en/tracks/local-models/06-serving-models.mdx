@@ -1,0 +1,193 @@
+---
+title: "Serving Local Models as APIs"
+order: 6
+tags: ["local", "api", "deployment"]
+---
+
+## From Command Line to API
+
+Chatting with a model in the terminal is just the first step. To integrate local models into your applications, you need an **HTTP API**. Good news: virtually all local inference tools provide OpenAI-compatible API endpoints.
+
+## OpenAI-Compatible API: The De Facto Standard
+
+OpenAI's Chat Completions API format has become the de facto standard for LLM APIs. Almost every local inference tool supports it:
+
+```bash
+POST /v1/chat/completions
+{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "stream": true
+}
+```
+
+This means your code only needs to change one `base_url` line to switch seamlessly between local models and cloud APIs.
+
+## Common Serving Solutions
+
+### 1. Ollama
+
+The simplest option. Runs an API server automatically after installation.
+
+```bash
+# Start (runs automatically after install)
+ollama serve
+
+# API endpoint
+# http://localhost:11434/v1/chat/completions
+```
+
+Pros: Zero config, automatic model management, supports concurrency.
+Cons: Limited parameter customization, not ideal for high-performance production.
+
+### 2. llama-server (llama.cpp)
+
+Lightweight with more control.
+
+```bash
+llama-server \
+  -m model.gguf \
+  -c 8192 \
+  -ngl 99 \
+  --port 8080
+```
+
+Pros: Fine-grained parameter control, small resource footprint.
+Cons: Manual model file management.
+
+### 3. vLLM
+
+Production-oriented high-performance inference engine.
+
+```bash
+pip install vllm
+
+vllm serve meta-llama/Llama-3.1-8B-Instruct \
+  --port 8000 \
+  --max-model-len 8192
+```
+
+Key advantages:
+- **PagedAttention**: Efficient KV Cache management, significantly improves throughput
+- **Continuous batching**: Processes multiple requests simultaneously, better GPU utilization
+- **High concurrency**: Suitable for multi-user scenarios
+
+Cons: Requires NVIDIA GPU, doesn't support GGUF (uses SafeTensors), more complex setup than Ollama.
+
+### 4. Text Generation Inference (TGI)
+
+By Hugging Face, similar positioning to vLLM.
+
+```bash
+docker run --gpus all \
+  -p 8080:80 \
+  ghcr.io/huggingface/text-generation-inference \
+  --model-id meta-llama/Llama-3.1-8B-Instruct
+```
+
+Pros: Easy Docker deployment, good Hugging Face ecosystem integration.
+Cons: Also requires NVIDIA GPU.
+
+## Solution Comparison
+
+| | Ollama | llama-server | vLLM | TGI |
+|---|---|---|---|---|
+| Setup difficulty | Minimal | Simple | Medium | Medium |
+| Model format | GGUF | GGUF | SafeTensors | SafeTensors |
+| GPU support | Multi-platform | Multi-platform | NVIDIA | NVIDIA |
+| CPU support | Yes | Yes | No | No |
+| Concurrency | Basic | Basic | Excellent | Excellent |
+| Continuous batching | No | No | Yes | Yes |
+| Best for | Dev/personal use | Lightweight deploy | Production | Production |
+
+## Code Integration
+
+All these services are compatible with the OpenAI SDK — the code is nearly identical:
+
+### Python
+
+```python
+from openai import OpenAI
+
+# Switch backends by changing base_url
+client = OpenAI(
+    base_url="http://localhost:11434/v1",  # Ollama
+    # base_url="http://localhost:8080/v1",  # llama-server
+    # base_url="http://localhost:8000/v1",  # vLLM
+    api_key="not-needed"
+)
+
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Implement binary search in Python"}
+    ],
+    temperature=0.3
+)
+
+print(response.choices[0].message.content)
+```
+
+### TypeScript
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:11434/v1',
+  apiKey: 'not-needed',
+});
+
+const stream = await client.chat.completions.create({
+  model: 'llama3.1:8b',
+  messages: [{ role: 'user', content: 'Explain async/await' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+}
+```
+
+### Streaming
+
+Streaming output is important for user experience — no need to wait for the full response:
+
+```python
+stream = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[{"role": "user", "content": "Write a poem"}],
+    stream=True
+)
+
+for chunk in stream:
+    content = chunk.choices[0].delta.content
+    if content:
+        print(content, end="", flush=True)
+```
+
+## Production Considerations
+
+If you plan to use local models in production, also consider:
+
+**Load balancing**: Multiple model instances behind Nginx or Caddy.
+
+**Health checks**: Regularly verify the inference service is alive.
+
+**Request queuing**: LLM inference is slow; you need proper queuing and timeout mechanisms.
+
+**Monitoring**: Track GPU utilization, inference latency, and memory usage.
+
+**Security**: Don't expose the inference API directly to the internet. Add authentication and rate limiting.
+
+## Key Takeaways
+
+1. **The OpenAI-compatible API is the standard interface.** All major local inference tools support it, keeping migration costs minimal.
+2. **Ollama is great for development and personal use**, vLLM for production environments. Choose based on your needs.
+3. **Code integration just requires changing `base_url`** — use OpenAI SDKs to connect to local models with zero switching cost.
+4. **Production deployment needs load balancing, monitoring, and security** — not just getting the model running.

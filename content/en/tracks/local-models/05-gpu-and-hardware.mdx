@@ -1,0 +1,131 @@
+---
+title: "Hardware Requirements and Optimization"
+order: 5
+tags: ["local", "hardware", "gpu"]
+---
+
+## Can It Run, and How Fast
+
+The first question when running LLMs locally is always: **what models can my hardware handle?** This chapter helps you answer that.
+
+## Memory Is the Key Bottleneck
+
+The core bottleneck for LLM inference isn't compute — it's **memory bandwidth**. All model parameters must be loaded into memory, and every token generation requires reading through them.
+
+This means:
+- **GPU inference is bottlenecked by VRAM capacity and bandwidth**
+- **CPU inference is bottlenecked by RAM bandwidth**
+
+## VRAM Requirements by Model Size
+
+Using Q4_K_M quantization (excluding context cache overhead):
+
+| Model Size | Q4_K_M File | Recommended VRAM | Recommended RAM (CPU) |
+|---|---|---|---|
+| 1–3B | ~1–2 GB | 4 GB | 8 GB |
+| 7–8B | ~4–5 GB | 8 GB | 16 GB |
+| 13B | ~7–8 GB | 10 GB | 16 GB |
+| 30–34B | ~18–20 GB | 24 GB | 32 GB |
+| 70B | ~38–40 GB | 48 GB | 64 GB |
+
+Note: Context windows need extra memory too. An 8K context requires roughly 1–2 GB extra, 32K may need 4–8 GB.
+
+## GPU vs CPU Inference
+
+### GPU Inference
+
+GPU inference is fast, but requires enough VRAM to hold the entire model (or most of it).
+
+**Speed reference (Q4_K_M, 7B model)**:
+- High-end GPU (RTX 4090, 24GB): 60–80 tokens/s
+- Mid-range GPU (RTX 4060, 8GB): 30–50 tokens/s
+- Apple M2 Pro (16GB unified memory): 20–35 tokens/s
+
+### CPU Inference
+
+CPU works but is much slower — mainly limited by memory bandwidth.
+
+**Speed reference (Q4_K_M, 7B model)**:
+- High-end CPU (modern AMD/Intel, DDR5): 8–15 tokens/s
+- Average laptop CPU: 3–8 tokens/s
+
+8 tokens/s is roughly normal reading speed — barely usable. 3 tokens/s requires patience.
+
+### Partial Offload
+
+If GPU VRAM can't fit the entire model, you can place **some layers on GPU, the rest on CPU**. Speed falls between pure GPU and pure CPU, roughly proportional to the ratio of layers on GPU.
+
+## Platform Hardware Guide
+
+### Apple Silicon (Recommended for Beginners)
+
+Apple M-series chips are the sweet spot for local LLMs:
+
+- **Unified memory architecture**: CPU and GPU share memory, no "not enough VRAM" problem
+- **Metal GPU acceleration**: Supported by llama.cpp and Ollama
+- **High memory bandwidth**: M2 Pro reaches 200 GB/s, M3 Max reaches 400 GB/s
+
+| Chip | Unified Memory | Recommended Model Ceiling |
+|---|---|---|
+| M1/M2 (8GB) | 8 GB | 3–7B Q4 |
+| M1/M2 Pro (16GB) | 16 GB | 7–13B Q4 |
+| M1/M2 Pro (32GB) | 32 GB | 30B Q4 |
+| M3 Max (48GB) | 48 GB | 70B Q4 |
+| M2/M3 Ultra (192GB) | 192 GB | 70B F16 |
+
+### NVIDIA GPU
+
+NVIDIA GPUs are the standard AI hardware with the most mature CUDA ecosystem.
+
+| GPU | VRAM | Recommended Model Ceiling |
+|---|---|---|
+| RTX 4060 | 8 GB | 7B Q4 |
+| RTX 4060 Ti | 16 GB | 13B Q4 |
+| RTX 4070 Ti Super | 16 GB | 13B Q4 |
+| RTX 4090 | 24 GB | 30B Q4 |
+| RTX 5090 | 32 GB | 30B Q5 |
+
+### AMD GPU
+
+AMD supports GPU inference through ROCm. Support is improving but isn't as mature as NVIDIA. Fine for existing AMD GPU owners, not recommended to buy specifically for LLM inference.
+
+## Memory Estimation Formula
+
+Quick estimate for memory needs:
+
+```
+Total memory = Model size + KV Cache + System overhead
+
+Model size = Parameters(B) × Quantization bits ÷ 8
+KV Cache ≈ Context length × Layers × Hidden dim × 4 ÷ 1024³ (GB)
+System overhead ≈ 0.5–1 GB
+```
+
+Simplified: **model file size + 20–30% overhead** is roughly what you need.
+
+## Practical Recommendations
+
+### By Budget
+
+**Entry (zero cost)**: Run a 3B model on CPU with your current computer. Experience what local inference feels like.
+
+**Light use (~$700)**: Mac mini M4 Pro (24GB). Smooth 7B–13B inference, quiet, low power.
+
+**Serious use (~$1400)**: Mac mini M4 Pro (48GB) or desktop with RTX 4090. Can run 30B+ models.
+
+**Professional**: Mac Studio M3 Ultra (192GB) or multi-GPU setup. Can run 70B F16 and beyond.
+
+### Performance Optimization Tips
+
+1. **Prefer GPU inference**: Speed difference is typically 5–10x
+2. **Choose the right quantization**: Q4_K_M is usually the optimal balance
+3. **Close unnecessary programs**: Free memory for the model
+4. **Adjust context length**: Reduce `-c` when you don't need long context to save memory
+5. **Use Flash Attention**: If your hardware and software support it, significantly reduces KV Cache memory usage
+
+## Key Takeaways
+
+1. **Memory (not compute) is the core bottleneck for local LLMs.** Check your VRAM/RAM first, then decide what model to run.
+2. **Apple Silicon offers the best entry-level value** — unified memory architecture is naturally suited for LLM inference.
+3. **GPU is 5–10x faster than CPU.** If you have a GPU, always enable GPU acceleration.
+4. **Simple formula: model file size + 30% ≈ actual memory needed.** Use this for quick feasibility checks.

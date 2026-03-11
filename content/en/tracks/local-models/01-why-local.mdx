@@ -1,0 +1,85 @@
+---
+title: "Why Run Models Locally"
+order: 1
+tags: ["local", "basics", "privacy"]
+---
+
+## Cloud APIs Aren't Your Only Option
+
+Most developers start with LLMs through cloud APIs — OpenAI, Claude, Gemini. That's fine, but it's not the only way.
+
+You can run a large language model on your own machine. No servers, no GPU clusters — a regular laptop will do (though better hardware means better performance).
+
+## Advantages of Running Locally
+
+### 1. Data Privacy
+
+Calling a cloud API means your data travels to third-party servers. For many scenarios, that's a dealbreaker:
+
+- Internal company code and documents
+- Medical, legal, or other sensitive data
+- Users' personal information
+
+Local models keep data entirely on your machine. **Zero network transfer, zero privacy risk.**
+
+### 2. Cost Control
+
+APIs charge per token, and costs add up fast. A complex conversation with GPT-4 can cost several cents to dollars. Batch processing tasks can generate surprising bills.
+
+Local models have fixed costs — hardware and electricity. Once running, there's no per-use charge. For high-frequency use cases, local deployment is cheaper long-term.
+
+### 3. Offline Availability
+
+On a plane, in the subway, in air-gapped environments — local models keep working. This is also critical for edge computing scenarios.
+
+### 4. Low Latency
+
+Cloud APIs have network round-trip latency, typically 200ms–2s. Local model inference latency depends only on your hardware, with no network overhead. For real-time applications like IDE code completion, local inference has a clear latency advantage.
+
+### 5. Full Control
+
+You can precisely control every model parameter — temperature, sampling strategy, context length, system prompts. No platform restrictions, no content filtering (though this also means you're responsible for safety).
+
+## Cloud vs Local: How to Choose
+
+| | Cloud API | Local Deployment |
+|---|---|---|
+| Model capability | Best (GPT-4, Claude, etc.) | Limited by hardware, typically smaller models |
+| Privacy | Data sent to third party | Data stays local |
+| Cost model | Pay per token | One-time hardware + electricity |
+| Latency | Network + inference latency | Inference latency only |
+| Offline use | No | Yes |
+| Setup difficulty | Simple, sign up and go | Some configuration needed |
+| Maintenance | Platform handles it | You handle it |
+| Customizability | Limited to API parameters | Full control |
+
+**In practice, many teams use both**: cloud models for complex tasks, local models for simple or privacy-sensitive tasks. It's not either/or.
+
+## The Local Model Ecosystem
+
+The open-source community has exploded over the past two years. There are now many high-quality open-source models you can run locally:
+
+- **Llama series** (Meta): From 7B to 70B+, covering most use cases
+- **Qwen series** (Alibaba): Strong multilingual capabilities, multiple sizes
+- **Mistral / Mixtral**: Efficient small-to-medium models
+- **DeepSeek series**: Strong reasoning, great value
+- **Gemma** (Google): Lightweight but capable
+
+With tools like Ollama and llama.cpp, running these models locally is straightforward — often just a single command.
+
+## Limitations of Local Models
+
+To be honest, local models aren't a silver bullet:
+
+**Capability ceiling**: Hardware limits you to typically 7B–13B models (on a regular computer), which still lag behind top-tier models like GPT-4 or Claude 3.5. For complex reasoning or long-form writing, smaller local models may fall short.
+
+**Hardware requirements**: While CPU inference works, it's slow. For a smooth experience, you need a GPU with enough VRAM or an Apple Silicon Mac.
+
+**Maintenance overhead**: Model updates, environment configuration, compatibility issues — you handle all of this yourself.
+
+## Key Takeaways
+
+1. **Local models' core value is privacy, cost, and control.** If you handle sensitive data or have high-frequency needs, local deployment is worth serious consideration.
+2. **The open-source model ecosystem is mature.** Llama, Qwen, DeepSeek and others are improving rapidly, and tools like Ollama make getting started easy.
+3. **Cloud and local aren't opposites.** Best practice is often a hybrid approach, choosing the right tool for each scenario.
+4. **Local model capability is hardware-limited.** Before deciding, understand what level of model your hardware can run (covered in later chapters).

@@ -1,0 +1,137 @@
+---
+title: "Prompt Fundamentals"
+order: 1
+tags: ["prompt", "basics"]
+---
+
+## What Is a Prompt
+
+A prompt is the input text you send to an LLM. Sounds simple — just type something?
+
+Yes, but **how** you type determines how much value you get from the model. With the same model, a well-written prompt versus a poorly written one can produce wildly different output quality.
+
+It's like search engines. Same Google, but some people find exact answers while others scroll through three pages with nothing useful. The difference is query quality.
+
+## Four Elements of a Good Prompt
+
+An effective prompt typically contains four parts (not all are always needed):
+
+### 1. Instruction
+
+What you want the model to do. Be specific.
+
+```
+❌ "Help me fix this code"
+✅ "Check this Python code for bugs, identify potential null pointer exceptions, and provide fixes"
+```
+
+### 2. Context
+
+Background information the model needs.
+
+```
+❌ "Write a welcome email"
+✅ "We're a B2B SaaS company. A new user just completed registration. Write a welcome email, professional but friendly, highlighting three core features"
+```
+
+### 3. Input Data
+
+The specific content for the model to process.
+
+```
+Convert the following JSON to a TypeScript interface:
+
+{"name": "John", "age": 30, "hobbies": ["reading", "coding"]}
+```
+
+### 4. Output Format
+
+The expected format and structure of the response.
+
+```
+❌ "Analyze this log file"
+✅ "Analyze this log file and output in this format:
+   - Error count:
+   - Most common error type:
+   - Suggested fix priority (high/medium/low):"
+```
+
+## Common Prompt Mistakes
+
+### Mistake 1: Vague Instructions
+
+```
+❌ "Process this data for me"
+```
+
+The model doesn't know what "process" means — clean? Analyze? Transform? Visualize?
+
+```
+✅ "Group this CSV data by date, calculate the average for each group, output as a Markdown table"
+```
+
+### Mistake 2: Missing Necessary Context
+
+```
+❌ "Why is this test failing?"
+```
+
+The model can't see your code, test output, or environment config.
+
+```
+✅ "Here's my pytest code and failure output. Test environment is Python 3.11 + pytest 7.4.
+   Analyze the failure cause and provide a fix.
+
+   [paste code and output here]"
+```
+
+### Mistake 3: Asking for Too Much at Once
+
+```
+❌ "Design a complete e-commerce system including database design, API design, frontend architecture, and deployment plan"
+```
+
+Cramming too many tasks into one prompt means none get done well. Break it into multiple conversations.
+
+### Mistake 4: Not Specifying Output Format
+
+When you need structured output, not specifying a format lets the model freestyle — the format may vary each time, making programmatic parsing difficult.
+
+## Prompting Is Programming
+
+A useful mental model for developers: **a prompt is a "program" written in natural language.**
+
+- Instruction = function name and docstring
+- Context = parameters and configuration
+- Input = function arguments
+- Output format = return type
+
+Like code, prompts need **iteration**. The first version is rarely the best. Observe the output, adjust the prompt, try again — this loop is identical to debugging.
+
+## "Garbage In, Garbage Out"
+
+The LLM version of GIGO:
+
+- Vague instructions → vague answers
+- No context → generic (possibly irrelevant) answers
+- Contradictory requirements → confused output
+- Clear instructions + sufficient context + explicit format → high-quality output
+
+**The quality ceiling of the model's output is determined by your prompt quality.**
+
+## Temperature and Sampling
+
+Beyond writing the prompt, there's one key parameter affecting output: **temperature**.
+
+- **temperature = 0**: Always picks the highest-probability token, output is nearly deterministic. Good for code generation, data extraction — tasks requiring precision.
+- **temperature = 0.7**: Some randomness, more diverse output. Good for creative writing, brainstorming.
+- **temperature = 1.0+**: High randomness, output may become incoherent. Rarely used.
+
+Rule of thumb: **low temperature for accuracy tasks, high temperature for creativity tasks.**
+
+## Key Takeaways
+
+1. **Good prompt = clear instruction + sufficient context + explicit output format.** These three elements determine output quality.
+2. **Iterate on prompts like you iterate on code.** It's normal for the first version to be imperfect — observe, adjust, retry.
+3. **Specific beats vague.** "Analyze the bug cause and provide fix code" is far better than "help me look at this."
+4. **Temperature controls output determinism.** Use 0 for precision tasks, 0.7 for creative tasks.

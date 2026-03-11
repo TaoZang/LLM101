@@ -1,0 +1,197 @@
+---
+title: "Document Chunking Strategies"
+order: 4
+tags: ["rag", "chunking", "preprocessing"]
+---
+
+## Why Chunking Matters
+
+You can't convert an entire document into a single vector. Two reasons:
+
+**Embedding model length limits**: Most models only support 512–8192 tokens of input. A long document gets truncated, losing information from the latter half.
+
+**Retrieval precision**: A vector represents the overall semantics of text. A 10-page document covering many topics produces an "averaged" vector — searching for any specific question won't match well. Splitting into focused chunks, each about one topic, makes search more precise.
+
+**Chunking** is splitting long documents into pieces suited for embedding and retrieval.
+
+## Fixed-Size Chunking
+
+The simplest approach: split at fixed character or token counts.
+
+```python
+def fixed_size_chunk(text, chunk_size=500, overlap=50):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap
+    return chunks
+```
+
+**Overlap** is crucial. Without it, sentences can be split mid-thought:
+
+```
+No overlap:
+Chunk 1: "...the refund review period is"
+Chunk 2: "3-5 business days..."
+
+With overlap:
+Chunk 1: "...the refund review period is 3-5 business days."
+Chunk 2: "the refund review period is 3-5 business days. Refunds..."
+```
+
+Overlap prevents information loss at chunk boundaries.
+
+Pros: Simple, predictable, fast.
+Cons: Ignores semantic boundaries, may split mid-paragraph or mid-sentence.
+
+## Separator-Based Chunking
+
+Smarter: split at natural semantic boundaries.
+
+```python
+def split_by_separators(text, separators=["\n\n", "\n", ". ", " "]):
+    """Recursive split: try large separators first, then smaller ones"""
+    chunks = []
+    for sep in separators:
+        if sep in text:
+            parts = text.split(sep)
+            for part in parts:
+                if len(part) <= chunk_size:
+                    chunks.append(part)
+                else:
+                    chunks.extend(split_by_separators(part, separators[1:]))
+            return chunks
+    return fixed_size_chunk(text)
+```
+
+Priority: paragraph breaks (`\n\n`) → newlines (`\n`) → periods → spaces. Keep complete paragraphs and sentences whenever possible.
+
+This is the core idea behind LangChain's `RecursiveCharacterTextSplitter`.
+
+## Semantic Chunking
+
+The smartest approach: use embeddings to determine where to split.
+
+Principle:
+1. Split document into sentences
+2. Compute embedding similarity between adjacent sentences
+3. When similarity drops sharply (topic change), split there
+
+```python
+def semantic_chunk(sentences, threshold=0.5):
+    chunks = []
+    current_chunk = [sentences[0]]
+
+    for i in range(1, len(sentences)):
+        sim = cosine_similarity(
+            embed(sentences[i-1]),
+            embed(sentences[i])
+        )
+        if sim < threshold:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentences[i]]
+        else:
+            current_chunk.append(sentences[i])
+
+    chunks.append(" ".join(current_chunk))
+    return chunks
+```
+
+Pros: Semantically coherent chunks.
+Cons: Extra embedding computation, slower; threshold needs tuning.
+
+## Format-Specific Chunking
+
+### Markdown
+
+Markdown has natural structure — headings are ideal split points:
+
+```python
+def markdown_chunk(text):
+    sections = re.split(r'\n(?=#{1,3} )', text)
+    chunks = []
+    for section in sections:
+        if len(section) > chunk_size:
+            chunks.extend(split_by_paragraphs(section))
+        else:
+            chunks.append(section)
+    return chunks
+```
+
+### Code
+
+Split code by functions or classes, not character count:
+
+```python
+# Good: complete function
+def calculate_tax(income):
+    if income <= 36000:
+        return income * 0.03
+    elif income <= 144000:
+        return income * 0.1 - 2520
+
+# Bad: function cut in half
+def calculate_tax(income):
+    if income <= 36000:
+        return income * 0.03
+# --- cut here ---
+    elif income <= 144000:
+        return income * 0.1 - 2520
+```
+
+## Choosing Chunk Size
+
+| Size | Pros | Cons | Best For |
+|---|---|---|---|
+| Small (100–200 tokens) | Precise retrieval | Lacks context | Precise Q&A |
+| Medium (300–500 tokens) | Balanced | — | General use |
+| Large (500–1000 tokens) | Rich context | Less precise retrieval | Summarization, analysis |
+
+**Start with 300–500 tokens** and adjust based on results.
+
+## Tips for Better Chunking
+
+### 1. Preserve Metadata
+
+```python
+chunk = {
+    "text": "Refund review takes 3-5 business days...",
+    "metadata": {
+        "source": "refund-policy.md",
+        "section": "Review Process",
+        "page": 3
+    }
+}
+```
+
+Metadata doesn't go into the embedding but is invaluable in search results (filtering, showing sources).
+
+### 2. Add Context Prefixes
+
+Prepend the section heading to each chunk:
+
+```
+Original: "Review period is 3-5 business days."
+Enhanced: "Refund Policy > Review Process: Review period is 3-5 business days."
+```
+
+This helps the embedding model understand the chunk's context, improving retrieval precision.
+
+### 3. Small-to-Big Retrieval
+
+An advanced strategy: use small chunks for retrieval (more precise), but return the larger parent chunk to the LLM (more context).
+
+```
+Index: small chunks (200 tokens) → for vector search
+Return: large chunks (800 tokens) → containing the small chunk + surrounding context
+```
+
+## Key Takeaways
+
+1. **Chunking is a critical factor in RAG quality.** Too large = imprecise retrieval, too small = lacking context.
+2. **Start with recursive character splitting** (paragraphs → sentences → characters) — the most practical general-purpose approach.
+3. **Overlap matters** — 10–20% overlap prevents information loss at boundaries.
+4. **Start with 300–500 tokens as chunk size**, adjust based on your task.
+5. **Preserving metadata and adding context prefixes** significantly improve retrieval quality.

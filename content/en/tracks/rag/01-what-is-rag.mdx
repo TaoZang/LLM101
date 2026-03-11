@@ -1,0 +1,145 @@
+---
+title: "What is RAG"
+order: 1
+tags: ["rag", "basics"]
+---
+
+## The LLM Knowledge Problem
+
+LLMs have two fundamental knowledge flaws:
+
+**Knowledge cutoff**: A model's knowledge stops at its training data cutoff date. A model trained through January 2024 knows nothing about February 2024. Ask about recent news and it'll either admit ignorance or confidently fabricate an answer.
+
+**Hallucination**: Models confidently produce plausible but completely incorrect information. They're not "looking up" answers — they're "generating" the most probable text. Those are fundamentally different things.
+
+## RAG: Giving LLMs a Search Engine
+
+**RAG** (Retrieval-Augmented Generation) is a simple idea:
+
+> Before the model answers, retrieve relevant information from an external knowledge base, stuff that information into the prompt, and have the model answer based on it.
+
+An analogy: if an LLM is a knowledgeable expert who might misremember details, RAG is checking the reference materials before they answer.
+
+## How RAG Works
+
+```
+User asks a question
+   ↓
+Convert question to vector (Embedding)
+   ↓
+Search vector database for most relevant document chunks
+   ↓
+Send retrieved chunks + original question to LLM
+   ↓
+LLM generates answer based on provided context
+```
+
+A concrete example with a company knowledge base:
+
+```
+User: "What's our refund policy?"
+
+1. Convert question to vector
+2. Find most relevant docs in knowledge base:
+   - "refund-policy.md" → "Customers can request a full refund within 30 days..."
+   - "support-process.md" → "Refund review takes 3-5 business days..."
+
+3. Send docs + question to LLM:
+   "Answer the user's question based on these references.
+    References: [refund policy docs...]
+    Question: What's our refund policy?"
+
+4. LLM generates based on docs:
+   "Per company policy, customers can request a full refund within 30 days
+    of purchase, with a review period of 3-5 business days."
+```
+
+## RAG vs Alternatives
+
+| | RAG | Fine-tuning | Long Context |
+|---|---|---|---|
+| Knowledge updates | Real-time (just update the KB) | Requires retraining | Real-time (put in context) |
+| Implementation difficulty | Medium | High | Low |
+| Cost | Vector DB + retrieval | Training costs | High token costs for long context |
+| Knowledge volume | Very large (millions of docs) | Limited (training data size) | Limited by context window |
+| Source attribution | Yes | No | Yes |
+| Best for | KB Q&A, document search | Style/format customization | Small document analysis |
+
+### When to Use RAG
+
+- Knowledge base is large (exceeds context window)
+- Knowledge needs frequent updates
+- You need source attribution (traceability)
+- Answering questions based on private data
+
+### When NOT to Use RAG
+
+- Questions don't need external knowledge (pure reasoning, code generation)
+- Document volume is small enough to fit in context directly
+- You need the model to change its behavior, not its knowledge (use fine-tuning)
+
+## Core Components of RAG
+
+A RAG system has several key parts:
+
+### 1. Document Ingestion
+
+Process raw documents (PDFs, web pages, Markdown, etc.) into a retrievable format:
+- Parse documents
+- Split into chunks (Chunking)
+- Convert to vectors (Embedding)
+- Store in vector database
+
+### 2. Retrieval
+
+Find the most relevant document chunks for a user query:
+- Convert query to vector
+- Search for similar vectors in the database
+- Optionally supplement with keyword search
+- Sort and filter results
+
+### 3. Generation
+
+Send retrieved information and the user question to an LLM:
+- Design appropriate prompt templates
+- Handle "no relevant information found" cases
+- Have the model cite sources
+
+Subsequent chapters will dive deep into each component.
+
+## A Minimal RAG Example
+
+Core RAG logic in pseudocode:
+
+```python
+# 1. Preparation: process documents
+documents = load_documents("./knowledge_base/")
+chunks = split_into_chunks(documents, chunk_size=500)
+embeddings = embed(chunks)
+vector_db.store(chunks, embeddings)
+
+# 2. Query phase
+query = "What's our refund policy?"
+query_embedding = embed(query)
+relevant_chunks = vector_db.search(query_embedding, top_k=3)
+
+# 3. Generation phase
+prompt = f"""Answer the question based on the references below.
+If the references don't contain relevant info, say "I'm not sure."
+
+References:
+{format_chunks(relevant_chunks)}
+
+Question: {query}"""
+
+answer = llm.generate(prompt)
+```
+
+That's the entire core logic of RAG. Of course, each step has many details and optimization opportunities — that's what the following chapters cover.
+
+## Key Takeaways
+
+1. **RAG = Retrieval + Generation.** Find relevant information first, then have the LLM answer based on it. Solves knowledge cutoff and hallucination problems.
+2. **RAG suits scenarios with large, frequently updated knowledge bases that need source attribution.** For small document volumes, just use long context.
+3. **Three core components: document ingestion, retrieval, generation.** Each affects the final quality.
+4. **RAG and fine-tuning solve different problems.** RAG supplements knowledge, fine-tuning changes behavior. They can be combined.

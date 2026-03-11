@@ -1,0 +1,179 @@
+---
+title: "Getting Structured Output"
+order: 4
+tags: ["prompt", "json", "structured-output"]
+---
+
+## Why Developers Need Structured Output
+
+LLMs default to natural language — paragraphs of text. But as a developer, you typically need **data your program can parse**: JSON, XML, or specifically formatted text.
+
+```
+❌ Model: "Based on my analysis, this code has three issues. The first is..."
+✅ Model: {"issues": [{"line": 15, "severity": "high", "message": "..."}]}
+```
+
+The first requires you to parse natural language (painful and unreliable). The second is a direct `JSON.parse()` away.
+
+## Specifying JSON Format in Prompts
+
+The most basic approach: explicitly tell the model you want JSON.
+
+```
+Analyze the following code for issues. Output in JSON format.
+
+Format:
+{
+  "issues": [
+    {
+      "line": <line number>,
+      "severity": "high" | "medium" | "low",
+      "description": "<issue description>",
+      "fix": "<suggested fix>"
+    }
+  ],
+  "summary": "<summary>"
+}
+
+Code:
+```python
+def divide(a, b):
+    return a / b
+```
+```
+
+Key techniques:
+1. **Provide a complete JSON schema example** — don't just say "output JSON", show the structure
+2. **Use placeholders to explain fields** — `<line number>` is clearer than an actual number
+3. **Constrain enum values** — `"high" | "medium" | "low"` is more precise than "severity level"
+
+## API-Level JSON Mode
+
+Major APIs provide native JSON mode, more reliable than prompt-level instructions:
+
+### OpenAI
+
+```python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    response_format={"type": "json_object"},
+    messages=[
+        {"role": "system", "content": "You are an assistant that outputs JSON."},
+        {"role": "user", "content": "Analyze this code..."}
+    ]
+)
+```
+
+### Ollama (Local Models)
+
+```python
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    response_format={"type": "json_object"},
+    messages=[...]
+)
+```
+
+JSON Mode guarantees valid JSON output. But **it doesn't guarantee schema correctness** — it ensures valid syntax, not that fields and structure match your requirements. You still need to specify the schema in your prompt.
+
+## XML as Output Format
+
+For some scenarios, XML or XML-like tags work better than JSON:
+
+```
+Analyze the following text and annotate entities with tags:
+
+Text: John works at Google in Mountain View.
+
+<analysis>
+  <person>John</person>
+  <organization>Google</organization>
+  <location>Mountain View</location>
+</analysis>
+```
+
+XML-style advantages:
+- Tag names are semantic, more intuitive
+- Nested content reads well
+- Models like Claude have excellent XML tag understanding
+
+## Tool Use / Function Calling
+
+The most reliable structured output method is **Tool Use**. You define a function's parameter schema, and the model's output strictly follows it:
+
+```python
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "report_code_issues",
+        "description": "Report issues found in code",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "line": {"type": "integer"},
+                            "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                            "description": {"type": "string"}
+                        },
+                        "required": ["line", "severity", "description"]
+                    }
+                }
+            },
+            "required": ["issues"]
+        }
+    }
+}]
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Analyze this code..."}],
+    tools=tools,
+    tool_choice={"type": "function", "function": {"name": "report_code_issues"}}
+)
+```
+
+Tool Use advantages:
+- **Schema validation**: Output strictly matches your defined types and structure
+- **Enum constraints**: `enum` fields limit possible values
+- **Required fields**: `required` ensures critical fields aren't missing
+
+## Markdown as Lightweight Structure
+
+When programmatic parsing isn't needed, Markdown is a great "semi-structured" format:
+
+```
+Output analysis results in this Markdown format:
+
+## Overview
+(one-sentence summary)
+
+## Issues Found
+| # | Severity | Description | Suggestion |
+|---|---|---|---|
+| 1 | ... | ... | ... |
+
+## Next Steps
+- [ ] Action item 1
+- [ ] Action item 2
+```
+
+Markdown tables and lists are both human-readable and relatively easy to parse with regex.
+
+## Tips for Reliable Structured Output
+
+1. **Provide complete examples**: Don't just describe the format, give a full output example
+2. **Emphasize in System Prompt**: `"You must only output JSON, no other text"`
+3. **Use temperature=0**: Reduces randomness, improves format consistency
+4. **Post-processing**: Even with JSON Mode, add error handling — `try/catch` for parse failures
+5. **Schema validation**: Use Zod (TypeScript) or Pydantic (Python) to validate output matches expectations
+
+## Key Takeaways
+
+1. **Structured output is key to integrating LLMs into applications.** Natural language responses are useless to programs — you need JSON, XML, or other parseable formats.
+2. **Three methods ranked by reliability: Tool Use > JSON Mode > Prompt instructions.** Prefer Tool Use.
+3. **Always provide complete schema and examples in the prompt** — even when using JSON Mode.
+4. **Add error handling.** Structured output isn't 100% reliable — your code needs fallbacks for parse failures.

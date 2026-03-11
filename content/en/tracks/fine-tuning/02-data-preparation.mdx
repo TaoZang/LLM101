@@ -1,0 +1,172 @@
+---
+title: "Dataset Preparation"
+order: 2
+tags: ["fine-tuning", "data", "dataset"]
+---
+
+## Quality Over Quantity
+
+The #1 factor in fine-tuning results isn't model size or training parameters — it's **data quality**.
+
+100 high-quality samples typically outperform 1,000 low-quality ones. High quality means:
+- Accurate input-output correspondence
+- Outputs represent your ideal responses
+- Consistent style and format
+- No errors or contradictions
+
+## Data Formats
+
+### Instruction Tuning Format
+
+The most common format. Each sample has an instruction and expected output:
+
+```json
+{
+  "instruction": "Translate the following text to formal business English",
+  "input": "We wanna talk about working together",
+  "output": "We would like to discuss potential collaboration opportunities with your organization."
+}
+```
+
+### Chat Format
+
+Better for conversational applications:
+
+```json
+{
+  "conversations": [
+    {"role": "system", "content": "You are a professional customer support assistant"},
+    {"role": "user", "content": "I want a refund"},
+    {"role": "assistant", "content": "I'd be happy to help with your refund. Could you please provide your order number? And may I ask the reason for the refund?"}
+  ]
+}
+```
+
+### Common Data Formats
+
+| Format | Description | Used For |
+|---|---|---|
+| **Alpaca** | instruction + input + output | General instruction tuning |
+| **ShareGPT** | Multi-turn conversations array | Chat model fine-tuning |
+| **OpenAI JSONL** | messages array (role + content) | OpenAI fine-tuning API |
+| **JSONL** | One JSON object per line | General purpose |
+
+## How Much Data Do You Need
+
+Rules of thumb:
+
+| Amount | Effect |
+|---|---|
+| < 50 | Usually insufficient, consider few-shot |
+| 50–200 | Noticeable effect, suitable for style/format adjustments |
+| 200–1,000 | Good results, suitable for most fine-tuning scenarios |
+| 1,000–10,000 | Very good results, suitable for complex tasks |
+| > 10,000 | Evaluate if worth it (diminishing returns) |
+
+**Key insight: the return on data investment isn't linear.** Going from 100 to 500 samples usually brings large improvements; going from 5,000 to 10,000 may bring very little.
+
+## Data Collection Strategies
+
+### 1. Collect from Real Scenarios
+
+The best data comes from your actual business:
+- Human agent conversation logs
+- Expert-written responses
+- Reviewed and approved outputs
+
+```python
+raw_data = export_from_crm()
+
+training_data = []
+for record in raw_data:
+    training_data.append({
+        "conversations": [
+            {"role": "user", "content": record["customer_message"]},
+            {"role": "assistant", "content": record["agent_reply"]}
+        ]
+    })
+```
+
+### 2. Generate Synthetic Data with LLMs
+
+When real data is insufficient, use strong models to generate training data:
+
+```python
+prompt = """Generate training data for customer support fine-tuning.
+
+Scenario: User inquiring about refund-related issues
+Requirements:
+- Generate 10 different user questions and support replies
+- User questions should be diverse (different phrasings, situations)
+- Support replies should be professional, helpful, following company policy
+- Output in JSON format
+
+Company refund policy: 30-day refund window, order number required, 3-5 day review."""
+
+synthetic_data = llm.generate(prompt)
+```
+
+Guidelines for synthetic data:
+- **Generate with strong models, train weak models** — use GPT-4/Claude to create data for fine-tuning Llama 8B
+- **Human review required** — generated data needs quality checks
+- **Mix with real data** — synthetic data works best combined with real data
+
+### 3. Augment Existing Data
+
+Enhance existing data by varying phrasing while preserving semantics:
+
+```python
+augmentation_prompt = """Rewrite this user question in 3 different ways, keeping the same meaning:
+
+Original: "I'm not happy with my purchase, I want my money back"
+
+Output 3 rewrites:"""
+```
+
+## Data Cleaning
+
+Noise in training data gets learned by the model. Cleaning steps:
+
+### Deduplication
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+
+embeddings = embed_all(data)
+duplicate_pairs = []
+for i in range(len(embeddings)):
+    for j in range(i+1, len(embeddings)):
+        if cosine_similarity([embeddings[i]], [embeddings[j]])[0][0] > 0.95:
+            duplicate_pairs.append((i, j))
+```
+
+### Quality Filtering
+
+- Remove responses that are too short or too long
+- Remove data with obvious errors
+- Remove inconsistently formatted data
+- Remove responses with unnecessary disclaimers ("As an AI...", "I cannot...")
+
+### Consistency Checks
+
+Ensure instructions and responses are stylistically consistent:
+- Similar questions should have similarly styled answers
+- No contradictions between data points
+- Uniform output formatting
+
+## Dataset Splitting
+
+```python
+train_data = data[:int(len(data) * 0.9)]  # 90%
+eval_data = data[int(len(data) * 0.9):]   # 10%
+```
+
+The validation set monitors overfitting during training — if training loss drops but validation loss rises, you're overfitting.
+
+## Key Takeaways
+
+1. **Data quality > data quantity.** 100 high-quality samples usually beat 1,000 low-quality ones.
+2. **Real-scenario data is the best source.** Synthetic data is a useful supplement but needs human review.
+3. **50–200 samples can show results**, but more high-quality data brings better outcomes.
+4. **Data cleaning and consistency checks are non-negotiable.** Noisy data will be faithfully learned by the model.
+5. **Always maintain a validation set.** Without one, you can't tell if the model is learning or overfitting.

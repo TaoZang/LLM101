@@ -1,0 +1,198 @@
+---
+title: "训练流程"
+order: 4
+tags: ["fine-tuning", "training", "hands-on"]
+---
+
+## 训练工具概览
+
+微调 LLM 有几个主流工具选择：
+
+| 工具 | 特点 | 适合 |
+|---|---|---|
+| **Hugging Face (transformers + PEFT + TRL)** | 最灵活，组件化 | 需要完全控制的场景 |
+| **Axolotl** | YAML 配置驱动，简化流程 | 想要快速微调不想写太多代码 |
+| **Unsloth** | 速度优化，内存优化 | 资源有限，追求效率 |
+| **LLaMA Factory** | 中文生态友好，Web UI | 中文场景，偏好图形界面 |
+
+**推荐入门路线：先用 Unsloth 或 Axolotl 跑通，再学 Hugging Face 全栈以获得完全控制。**
+
+## 用 Unsloth 快速开始
+
+Unsloth 是目前最高效的微调工具之一，速度比标准实现快 2-5 倍，内存使用减少 60%。
+
+```python
+from unsloth import FastLanguageModel
+from trl import SFTTrainer
+from transformers import TrainingArguments
+from datasets import load_dataset
+
+# 1. 加载模型（自动应用 QLoRA）
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/Llama-3.1-8B-Instruct",
+    max_seq_length=2048,
+    load_in_4bit=True,
+)
+
+# 2. 配置 LoRA
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                     "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+)
+
+# 3. 加载数据
+dataset = load_dataset("json", data_files="training_data.jsonl")
+
+# 4. 训练
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=dataset["train"],
+    args=TrainingArguments(
+        output_dir="./output",
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        num_train_epochs=3,
+        learning_rate=2e-4,
+        warmup_steps=10,
+        logging_steps=10,
+        save_steps=100,
+        fp16=True,
+    ),
+)
+
+trainer.train()
+
+# 5. 保存
+model.save_pretrained("./lora_adapter")
+```
+
+## 关键超参数详解
+
+### Learning Rate（学习率）
+
+控制每次参数更新的幅度。**微调中最重要的超参数。**
+
+```
+太大 → 训练不稳定，loss 震荡或发散
+太小 → 学习太慢，需要更多轮次
+```
+
+| 微调方式 | 推荐学习率 |
+|---|---|
+| 全量微调 | 1e-5 到 5e-5 |
+| LoRA | 1e-4 到 3e-4 |
+| QLoRA | 2e-4（Unsloth 默认） |
+
+### Epochs（训练轮数）
+
+训练数据被完整遍历的次数。
+
+```
+太少 → 欠拟合，模型没学到
+太多 → 过拟合，模型"背答案"而不是"学方法"
+```
+
+**推荐：1-3 轮。** 数据量大时 1 轮可能就够，数据量小时可以到 3 轮。超过 5 轮通常意味着过拟合。
+
+### Batch Size（批大小）
+
+每次更新使用多少条数据。受限于显存。
+
+实际批大小 = `per_device_train_batch_size` × `gradient_accumulation_steps`
+
+```python
+per_device_train_batch_size = 4    # 每次实际喂给 GPU 的
+gradient_accumulation_steps = 4    # 累积 4 次再更新
+# 实际 batch size = 4 × 4 = 16
+```
+
+当显存不够大的 batch size 时，用 gradient accumulation 来模拟。
+
+### Warmup（预热）
+
+训练开始时学习率从 0 逐渐增大到设定值。防止初始阶段的大幅更新破坏预训练模型的知识。
+
+```
+推荐：总步数的 3-10%，或 10-100 步
+```
+
+## 监控训练过程
+
+### Loss 曲线
+
+训练过程中最重要的指标是 **loss**（损失值）：
+
+```
+正常的 loss 曲线：
+- 快速下降 → 缓慢下降 → 趋于平稳
+
+过拟合的信号：
+- 训练 loss 持续下降
+- 验证 loss 开始上升 ← 危险信号！
+
+欠拟合的信号：
+- loss 下降很慢或几乎不动
+- 最终 loss 值仍然很高
+```
+
+### 实际监控
+
+```python
+# 训练时启用 logging
+args = TrainingArguments(
+    logging_steps=10,        # 每 10 步记录一次
+    eval_strategy="steps",   # 定期在验证集上评估
+    eval_steps=50,           # 每 50 步评估一次
+    save_strategy="steps",
+    save_steps=100,
+    load_best_model_at_end=True,  # 训练结束后加载最优检查点
+)
+```
+
+用 TensorBoard 或 Weights & Biases 可视化：
+
+```bash
+tensorboard --logdir ./output/runs
+```
+
+## 常见问题
+
+### 过拟合
+
+**症状**：训练 loss 很低但实际使用效果差，模型倾向于"复制粘贴"训练数据中的回答。
+
+**解决**：
+- 减少训练轮数
+- 增加数据量
+- 增大 dropout
+- 降低 learning rate
+- 使用更小的 rank
+
+### 灾难性遗忘
+
+**症状**：微调后模型在目标任务上变好了，但通用能力明显下降——比如不会做数学了，或者忘了怎么写代码。
+
+**解决**：
+- 在训练数据中混入一些通用数据
+- 使用更小的 learning rate
+- 减少训练轮数
+- 用 LoRA 而不是全量微调（LoRA 天然缓解这个问题）
+
+### Loss 曲线异常
+
+**Loss 震荡**：学习率太大，降低学习率。
+**Loss 不下降**：学习率太小，或数据格式有问题（模型没在学你想让它学的部分）。
+**Loss 突然飙升**：可能遇到了异常数据，检查数据质量。
+
+## 要点总结
+
+1. **推荐用 Unsloth 或 Axolotl 入门**——简化了大量配置，几十行代码跑通微调。
+2. **Learning Rate 是最重要的超参数。** LoRA 微调推荐 2e-4，全量微调推荐 2e-5。
+3. **训练 1-3 轮通常足够。** 超过 5 轮大概率过拟合。
+4. **监控 loss 曲线是判断训练状态的核心手段。** 训练 loss 下降但验证 loss 上升 = 过拟合。
+5. **灾难性遗忘是微调的常见陷阱。** 用 LoRA、低学习率、混入通用数据来缓解。

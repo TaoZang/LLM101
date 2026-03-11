@@ -1,0 +1,172 @@
+---
+title: "LoRA and Parameter-Efficient Fine-Tuning"
+order: 3
+tags: ["fine-tuning", "lora", "peft"]
+---
+
+## The Problem with Full Fine-Tuning
+
+The most straightforward approach is **full fine-tuning** — updating all model parameters.
+
+But there's a big problem: a 7B model requires about 60GB VRAM for full fine-tuning (FP16). That's far beyond most consumer GPUs. A 70B model? You'd need a GPU cluster.
+
+Is there a way to achieve similar results with fewer resources?
+
+## LoRA: Low-Rank Adaptation
+
+**LoRA** is the most popular parameter-efficient fine-tuning method. Its core idea is elegant:
+
+> Don't modify the original model weights — add a small set of trainable parameters alongside them.
+
+### Intuitive Understanding
+
+Imagine a model weight matrix W as a huge matrix (say 4096×4096). Full fine-tuning updates all 16 million parameters.
+
+LoRA's approach: decompose the update into a product of two small matrices.
+
+```
+Original matrix W: 4096 × 4096 (16M parameters)
+
+LoRA update ΔW = A × B
+  A: 4096 × 16  (65K parameters)
+  B: 16 × 4096  (65K parameters)
+  Total: 130K parameters ← only 0.8% of the original!
+```
+
+The 16 here is the **rank** — LoRA's key hyperparameter. Higher rank means more trainable parameters and more expressive power, but also higher training cost.
+
+### Why This Works
+
+Research found that weight changes during fine-tuning have **low-rank** properties — despite billions of parameters, the actual "effective degrees of freedom" needed for fine-tuning are far fewer than the total parameter count. LoRA exploits exactly this property.
+
+## QLoRA: Going Further
+
+**QLoRA** combines quantization with LoRA, further reducing memory requirements:
+
+1. Quantize the base model to 4-bit (dramatically reduces memory)
+2. Apply LoRA on top of the quantized model
+3. Only LoRA parameters are trained (in FP16 precision)
+
+```
+Full fine-tuning 7B model: ~60 GB VRAM
+LoRA fine-tuning 7B model: ~16 GB VRAM
+QLoRA fine-tuning 7B model: ~6 GB VRAM  ← a single RTX 4060 works!
+```
+
+QLoRA makes fine-tuning 7B or even 13B models on consumer hardware possible.
+
+## Three Approaches Compared
+
+| | Full Fine-tuning | LoRA | QLoRA |
+|---|---|---|---|
+| Trainable params | 100% | 0.1–1% | 0.1–1% |
+| 7B model VRAM | ~60 GB | ~16 GB | ~6 GB |
+| Training speed | Slowest | Fast | Fast |
+| Quality | Best (theoretically) | Near full FT | Slightly below LoRA |
+| Hardware | Multi-GPU | Single GPU (16GB+) | Single GPU (8GB+) |
+| Best for | Ample resources | Most scenarios | Limited resources |
+
+**For most developers, QLoRA is the most practical choice.**
+
+## Key LoRA Hyperparameters
+
+### Rank (r)
+
+Determines LoRA's "capacity."
+
+| Rank | Trainable Params | Use Case |
+|---|---|---|
+| 8 | Minimal | Simple tasks (style adjustment) |
+| 16 | Moderate | Most tasks |
+| 32 | More | Complex tasks |
+| 64+ | Many | Approaching full fine-tuning |
+
+**Start with 16.** Increase if results aren't good enough.
+
+### Alpha (α)
+
+Scaling factor controlling LoRA update strength. Typically set to 2× the rank (alpha = 2 × rank).
+
+```
+Actual update = ΔW × (alpha / rank)
+```
+
+### Target Modules
+
+Which modules LoRA applies to. Transformers have various weight matrices:
+
+```python
+target_modules = [
+    "q_proj",    # Query projection
+    "k_proj",    # Key projection
+    "v_proj",    # Value projection
+    "o_proj",    # Output projection
+    "gate_proj", # FFN gate
+    "up_proj",   # FFN up projection
+    "down_proj", # FFN down projection
+]
+```
+
+**At minimum, include q_proj and v_proj.** Attention layer projections have the most significant impact. If resources allow, include all linear layers.
+
+### Dropout
+
+Regularization to prevent overfitting. Typically 0.05–0.1. Increase slightly with small datasets.
+
+## A Complete LoRA Configuration
+
+```python
+from peft import LoraConfig
+
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+    ],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+```
+
+## Using LoRA Weights
+
+After training, LoRA saves as a small file (typically tens of MB):
+
+```
+base_model/           # Original model (several GB)
+lora_adapter/         # LoRA weights (tens of MB)
+  adapter_config.json
+  adapter_model.safetensors
+```
+
+Two usage modes:
+
+**1. Dynamic loading** (overlay at inference)
+
+```python
+from peft import PeftModel
+
+model = load_base_model("meta-llama/Llama-3.1-8B")
+model = PeftModel.from_pretrained(model, "path/to/lora_adapter")
+```
+
+Advantage: one base model can pair with multiple LoRAs, switching on demand.
+
+**2. Merge weights** (before deployment)
+
+```python
+merged_model = model.merge_and_unload()
+merged_model.save_pretrained("merged_model/")
+```
+
+Advantage: no inference overhead, can be quantized to GGUF for deployment.
+
+## Key Takeaways
+
+1. **LoRA is the current mainstream fine-tuning method** — achieves near full fine-tuning quality with less than 1% of parameters.
+2. **QLoRA further lowers the barrier** — fine-tune 7B models with an 8GB GPU. Most practical for developers.
+3. **Key hyperparameters: rank=16, alpha=32 is a good starting point.** Target modules should include at least q_proj and v_proj.
+4. **LoRA weights are small (tens of MB) and hot-swappable** — one base model can serve multiple task-specific LoRAs.

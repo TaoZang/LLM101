@@ -1,0 +1,176 @@
+---
+title: "数据集准备"
+order: 2
+tags: ["fine-tuning", "data", "dataset"]
+---
+
+## 数据质量 > 数据数量
+
+微调效果的第一决定因素不是模型大小、不是训练参数——是**数据质量**。
+
+100 条高质量数据的微调效果，通常好于 1000 条低质量数据。高质量意味着：
+- 输入和输出的对应关系准确
+- 输出代表了你期望的理想回答
+- 风格和格式一致
+- 没有错误和矛盾
+
+## 数据格式
+
+### 指令微调格式（Instruction Tuning）
+
+最常用的格式。每条数据包含输入指令和期望输出：
+
+```json
+{
+  "instruction": "将以下文本翻译为正式的商务英语",
+  "input": "我们想和贵公司讨论一下合作的事情",
+  "output": "We would like to discuss potential collaboration opportunities with your organization."
+}
+```
+
+### 对话格式（Chat Format）
+
+更适合对话类应用：
+
+```json
+{
+  "conversations": [
+    {"role": "system", "content": "你是一个专业的客服助手"},
+    {"role": "user", "content": "我想退款"},
+    {"role": "assistant", "content": "好的，请提供您的订单号，我来帮您处理退款。请问是什么原因需要退款呢？"}
+  ]
+}
+```
+
+### 常见数据格式
+
+| 格式 | 说明 | 常用于 |
+|---|---|---|
+| **Alpaca** | instruction + input + output | 通用指令微调 |
+| **ShareGPT** | 多轮对话 conversations 数组 | 对话模型微调 |
+| **OpenAI JSONL** | messages 数组（role + content） | OpenAI 微调 API |
+| **JSONL** | 每行一个 JSON 对象 | 通用 |
+
+## 需要多少数据
+
+经验值：
+
+| 数据量 | 效果 |
+|---|---|
+| < 50 条 | 通常不够，考虑用 Few-shot |
+| 50-200 条 | 能看到明显效果，适合风格/格式调整 |
+| 200-1000 条 | 良好效果，适合大多数微调场景 |
+| 1000-10000 条 | 效果很好，适合复杂任务 |
+| > 10000 条 | 需要评估是否值得（边际收益递减） |
+
+**关键认知：数据量的投入产出不是线性的。** 从 100 到 500 条的提升通常很大，从 5000 到 10000 条的提升可能很小。
+
+## 数据收集策略
+
+### 1. 从真实场景收集
+
+最好的数据来源是你的真实业务场景：
+- 人工客服的对话记录
+- 专家编写的回复
+- 经过审核的输出结果
+
+```python
+# 从客服系统导出
+raw_data = export_from_crm()
+
+# 转换为训练格式
+training_data = []
+for record in raw_data:
+    training_data.append({
+        "conversations": [
+            {"role": "user", "content": record["customer_message"]},
+            {"role": "assistant", "content": record["agent_reply"]}
+        ]
+    })
+```
+
+### 2. 用 LLM 生成合成数据
+
+当真实数据不够时，可以用强模型生成训练数据：
+
+```python
+prompt = """你是一个数据生成助手。请为客服对话微调生成训练数据。
+
+场景：用户咨询退款相关问题
+要求：
+- 生成 10 组不同的用户问题和客服回复
+- 用户问题要多样化（不同表述、不同具体情况）
+- 客服回复要专业、有帮助、遵循公司政策
+- 输出 JSON 格式
+
+公司退款政策：30 天内可退款，需要订单号，审核 3-5 天。"""
+
+synthetic_data = llm.generate(prompt)
+```
+
+用合成数据的注意事项：
+- **用强模型生成，弱模型学习**——用 GPT-4/Claude 生成数据来微调 Llama 8B
+- **人工审核**——生成的数据需要人工检查质量
+- **混合真实数据**——合成数据最好和真实数据混合使用
+
+### 3. 改写现有数据
+
+对现有数据做增强——改变表述方式但保持语义不变：
+
+```python
+augmentation_prompt = """将以下用户问题改写为 3 种不同的表述方式，保持意思不变：
+
+原问题："我买的东西不满意，想退款"
+
+请输出 3 种改写："""
+```
+
+## 数据清洗
+
+训练数据中的噪声会被模型学到。清洗步骤：
+
+### 去重
+
+```python
+# 用 Embedding 去除语义重复的数据
+from sklearn.metrics.pairwise import cosine_similarity
+
+embeddings = embed_all(data)
+duplicate_pairs = []
+for i in range(len(embeddings)):
+    for j in range(i+1, len(embeddings)):
+        if cosine_similarity([embeddings[i]], [embeddings[j]])[0][0] > 0.95:
+            duplicate_pairs.append((i, j))
+```
+
+### 质量过滤
+
+- 删除太短或太长的回复
+- 删除包含明显错误的数据
+- 删除格式不一致的数据
+- 删除回复中包含"作为AI"、"我不能"等不必要的免责声明的数据
+
+### 一致性检查
+
+确保数据中的指令和回复风格一致：
+- 相似的问题应该有相似风格的回答
+- 不同数据之间不应该有矛盾
+- 输出格式应统一
+
+## 数据集分割
+
+```python
+# 标准分割：训练集 / 验证集
+train_data = data[:int(len(data) * 0.9)]  # 90%
+eval_data = data[int(len(data) * 0.9):]   # 10%
+```
+
+验证集用于在训练过程中监控过拟合——如果训练损失下降但验证损失上升，说明过拟合了。
+
+## 要点总结
+
+1. **数据质量 > 数据数量。** 100 条高质量数据通常好过 1000 条低质量数据。
+2. **从真实场景收集数据是最佳来源。** 合成数据是有用的补充，但需要人工审核。
+3. **50-200 条数据就能看到效果**，但更多高质量数据会带来更好的结果。
+4. **数据清洗和一致性检查不可跳过。** 噪声数据会被模型忠实地学到。
+5. **始终保留验证集。** 没有验证集就没法判断模型是在学习还是在过拟合。

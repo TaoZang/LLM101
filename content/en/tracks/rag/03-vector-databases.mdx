@@ -1,0 +1,177 @@
+---
+title: "Vector Databases"
+order: 3
+tags: ["rag", "vector-db", "storage"]
+---
+
+## Why You Need a Vector Database
+
+With embedding vectors, you need somewhere to store and search them.
+
+The naive approach: keep all vectors in memory, compute cosine similarity against every vector for each query, return the Top-K most similar. This works with a few hundred vectors, but at millions of documents, brute-force search is too slow.
+
+**Vector databases** are purpose-built for this — efficient storage and search of high-dimensional vectors.
+
+## Core Concepts
+
+### Approximate Nearest Neighbor (ANN)
+
+Vector databases don't do exact search (too slow). They do **Approximate Nearest Neighbor** search — they might not return the absolute most similar result, but they return very close results at extreme speed.
+
+For RAG, this is perfectly fine — you don't need the exact #1 match, you need "roughly the most relevant top few."
+
+### Index Types
+
+Vector databases use **indexes** to speed up search:
+
+**HNSW (Hierarchical Navigable Small World)**
+- Most commonly used index type
+- Fast search, high accuracy
+- Higher memory usage
+- Suitable for most scenarios
+
+**IVF (Inverted File Index)**
+- Clusters vectors first, searches only relevant clusters
+- Better memory efficiency
+- Slightly slower than HNSW
+- Suitable for very large-scale data
+
+**Flat (Brute Force)**
+- Exact search, scans all vectors
+- Most accurate but slowest
+- Only for small datasets or accuracy benchmarks
+
+## Popular Vector Databases
+
+### Chroma
+
+Best choice for getting started quickly.
+
+```python
+pip install chromadb
+```
+
+```python
+import chromadb
+
+client = chromadb.Client()
+collection = client.create_collection(
+    name="knowledge_base",
+    metadata={"hnsw:space": "cosine"}
+)
+
+# Add documents
+collection.add(
+    ids=["doc1", "doc2", "doc3"],
+    documents=[
+        "Refund policy: Full refund available within 30 days of purchase.",
+        "Support hours: Monday to Friday, 9 AM to 6 PM.",
+        "Product warranty is one year from date of purchase.",
+    ],
+    metadatas=[
+        {"source": "policy.md"},
+        {"source": "faq.md"},
+        {"source": "warranty.md"},
+    ]
+)
+
+# Search
+results = collection.query(
+    query_texts=["How do I get a refund?"],
+    n_results=2
+)
+
+print(results["documents"])
+# [['Refund policy: Full refund available within 30 days...', ...]]
+```
+
+Chroma advantages:
+- Built-in embedding (defaults to all-MiniLM-L6-v2)
+- Minimal API, runs in a few lines
+- Supports local storage and in-memory mode
+- Great for prototypes and small projects
+
+### pgvector
+
+Vector search extension for PostgreSQL. The natural choice if you're already using PostgreSQL.
+
+```sql
+CREATE EXTENSION vector;
+
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    content TEXT,
+    embedding vector(1536)
+);
+
+INSERT INTO documents (content, embedding)
+VALUES ('Refund policy...', '[0.1, 0.2, ...]');
+
+SELECT content, embedding <=> '[0.15, 0.22, ...]' AS distance
+FROM documents
+ORDER BY embedding <=> '[0.15, 0.22, ...]'
+LIMIT 5;
+```
+
+Advantages:
+- Integrates with existing PostgreSQL infrastructure
+- SQL queries — combine vector search with regular queries
+- Supports metadata filtering
+- Low operational overhead
+
+### Other Options
+
+| Database | Type | Notes |
+|---|---|---|
+| **Pinecone** | Cloud-hosted | Fully managed, zero ops, pay-per-use |
+| **Weaviate** | Open-source/Cloud | Feature-rich, hybrid search support |
+| **Qdrant** | Open-source/Cloud | Rust-based, excellent performance |
+| **Milvus** | Open-source | Large-scale, distributed architecture |
+| **FAISS** | Library (not DB) | By Meta, pure vector search library |
+
+## How to Choose
+
+| Need | Recommendation |
+|---|---|
+| Quick prototype | Chroma |
+| Already using PostgreSQL | pgvector |
+| Don't want to self-host | Pinecone |
+| Need high performance | Qdrant or Milvus |
+| Need hybrid search | Weaviate |
+| Just need a search library | FAISS |
+
+For most projects, **start with Chroma** — it's simple enough to let you focus on RAG core logic. Migrate to pgvector or Qdrant when you need production-grade deployment.
+
+## Metadata Filtering
+
+Vector search finds "most semantically similar," but sometimes you need additional conditions:
+
+```python
+# Search only within a specific source
+results = collection.query(
+    query_texts=["How do I get a refund?"],
+    n_results=3,
+    where={"source": "policy.md"}
+)
+
+# Combined filters
+results = collection.query(
+    query_texts=["How do I get a refund?"],
+    n_results=3,
+    where={
+        "$and": [
+            {"source": "policy.md"},
+            {"updated_after": {"$gte": "2024-01-01"}}
+        ]
+    }
+)
+```
+
+Metadata filtering is "filter first, search second" — narrow the candidate set, then do vector search within it. Essential for multi-tenant, multi-category knowledge bases.
+
+## Key Takeaways
+
+1. **Vector databases are purpose-built for storing and searching high-dimensional vectors.** They use ANN algorithms for efficient similarity search.
+2. **HNSW is the most common index type** — fast, accurate, suitable for most scenarios.
+3. **Start prototyping with Chroma**, consider pgvector (if already using PostgreSQL) or Qdrant for production.
+4. **Metadata filtering + vector search is the standard combo.** Filter to narrow scope, then semantic search.

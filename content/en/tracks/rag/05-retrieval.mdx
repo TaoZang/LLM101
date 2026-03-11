@@ -1,0 +1,188 @@
+---
+title: "Retrieval Strategies"
+order: 5
+tags: ["rag", "retrieval", "search"]
+---
+
+## Retrieval Sets the Ceiling
+
+There's an iron rule in RAG: **if retrieval doesn't find the right information, no amount of LLM capability can produce the right answer.**
+
+Generative models are already very capable. The bottleneck in RAG systems is almost always retrieval. This chapter covers strategies to improve retrieval quality.
+
+## Basic Vector Search
+
+The most basic retrieval: convert the query to a vector and find the most similar Top-K in the vector store.
+
+```python
+query_embedding = embed("How do I request a refund?")
+results = vector_db.search(query_embedding, top_k=5)
+```
+
+This handles most scenarios, but has limitations:
+
+- **Synonym issues**: The user says "return an item," the document says "refund" — vector search usually handles this, but exact keyword matching doesn't
+- **Keyword dependency**: Searching "Python 3.12 new features" may need exact keyword matching more than semantic matching
+
+## Hybrid Search
+
+**Hybrid search = vector search + keyword search**, combining strengths of both:
+
+```python
+# Vector search: semantic similarity
+vector_results = vector_db.search(query_embedding, top_k=10)
+
+# Keyword search: exact matching (BM25)
+keyword_results = bm25_search(query, top_k=10)
+
+# Merge results (Reciprocal Rank Fusion)
+final_results = rrf_merge(vector_results, keyword_results, top_k=5)
+```
+
+**RRF (Reciprocal Rank Fusion)** is the most common result merging algorithm:
+
+```python
+def rrf_merge(result_lists, k=60):
+    scores = {}
+    for result_list in result_lists:
+        for rank, doc in enumerate(result_list):
+            scores[doc.id] = scores.get(doc.id, 0) + 1 / (k + rank + 1)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+```
+
+Hybrid search outperforms pure vector search in most RAG scenarios. Many vector databases (Weaviate, Qdrant) have built-in hybrid search.
+
+## Re-ranking
+
+Retrieval typically happens in two stages:
+
+1. **Initial retrieval**: Vector/keyword search quickly finds candidates (Top-20 to Top-100)
+2. **Re-ranking**: A more precise model rescores and reorders candidates
+
+Re-ranking models (Cross-Encoders) are more accurate than embedding models because they **see the query and document together**, rather than encoding them separately and comparing.
+
+```python
+from sentence_transformers import CrossEncoder
+
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+# Initial retrieval: vector search returns 20 candidates
+candidates = vector_db.search(query_embedding, top_k=20)
+
+# Re-rank with Cross-Encoder
+pairs = [(query, doc.text) for doc in candidates]
+scores = reranker.predict(pairs)
+
+# Sort by new scores, take Top-5
+reranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)[:5]
+```
+
+Or use an API service:
+
+```python
+import cohere
+co = cohere.Client("your-api-key")
+
+results = co.rerank(
+    query="How to request a refund",
+    documents=[doc.text for doc in candidates],
+    top_n=5
+)
+```
+
+## Multi-Query Retrieval
+
+Users' queries may be imprecise or describe needs from only one angle. **Multi-query retrieval** has the LLM generate query variants to broaden search coverage:
+
+```python
+prompt = f"""Generate 3 search queries from different angles for this question:
+
+Question: {query}
+
+Output 3 queries, one per line:"""
+
+queries = llm.generate(prompt).split("\n")
+# Might produce:
+# "refund process steps"
+# "return and refund policy rules"
+# "requirements for requesting a refund"
+
+# Retrieve for each query
+all_results = []
+for q in queries:
+    results = vector_db.search(embed(q), top_k=5)
+    all_results.extend(results)
+
+final_results = deduplicate(all_results)
+```
+
+## HyDE (Hypothetical Document Embeddings)
+
+A clever trick: **have the LLM generate a hypothetical answer first, then search using that answer's vector instead of the question's vector.**
+
+The reasoning: an answer's semantics are closer to documents than a question's semantics are.
+
+```python
+hypothetical_answer = llm.generate(
+    f"Briefly answer: {query}\n(Doesn't need to be accurate, just for search)"
+)
+
+hyde_embedding = embed(hypothetical_answer)
+results = vector_db.search(hyde_embedding, top_k=5)
+```
+
+HyDE can significantly improve results in some scenarios, but adds latency (extra LLM call).
+
+## Metadata Filtering
+
+Narrow scope before or after vector search using metadata:
+
+```python
+# Time filter: only recent documents
+results = vector_db.search(
+    query_embedding,
+    top_k=5,
+    filter={"updated_at": {"$gte": "2024-01-01"}}
+)
+
+# Category filter: search within specific category
+results = vector_db.search(
+    query_embedding,
+    top_k=5,
+    filter={"category": "refund-policy"}
+)
+```
+
+## Evaluating Retrieval Quality
+
+How do you know if your retrieval is good? Common metrics:
+
+**Recall@K**: How many relevant documents are in the top K results (as a proportion of all relevant documents).
+
+**Precision@K**: How many of the top K results are relevant.
+
+**MRR (Mean Reciprocal Rank)**: Where the first relevant document appears (average of reciprocal ranks).
+
+```python
+test_cases = [
+    {"query": "refund policy", "expected_docs": ["policy-001", "policy-002"]},
+    {"query": "contact support", "expected_docs": ["faq-005"]},
+]
+
+for case in test_cases:
+    results = retrieve(case["query"], top_k=5)
+    result_ids = [r.id for r in results]
+
+    recall = len(set(result_ids) & set(case["expected_docs"])) / len(case["expected_docs"])
+    print(f"Query: {case['query']}, Recall@5: {recall}")
+```
+
+**Build an evaluation set before optimizing retrieval.** Otherwise you don't know if changes are improvements or regressions.
+
+## Key Takeaways
+
+1. **Retrieval quality sets the ceiling for RAG.** If retrieval doesn't find the right info, the LLM can't produce a good answer.
+2. **Hybrid search (vector + keyword) usually outperforms pure vector search.** Recommended for most scenarios.
+3. **Re-ranking is one of the most effective ways to improve retrieval precision** — use a Cross-Encoder to rescore candidates.
+4. **Multi-query and HyDE broaden search coverage**, but add latency. Best for quality-critical scenarios.
+5. **Build an evaluation set first, then optimize.** Without evaluation, optimization is blind.

@@ -1,0 +1,116 @@
+---
+title: "When and Why to Fine-Tune"
+order: 1
+tags: ["fine-tuning", "basics"]
+---
+
+## What Is Fine-Tuning
+
+**Fine-tuning** is continuing to train an already-trained model on your own data, making it better at specific tasks.
+
+Analogy: a pre-trained model is like a college graduate with broad knowledge. Fine-tuning is sending them to grad school — specializing in a particular field.
+
+## Do You Really Need Fine-Tuning
+
+Before fine-tuning, ask yourself:
+
+**1. Have you tried Prompt Engineering?**
+
+Often, well-crafted prompts with few-shot examples achieve what you need. Fine-tuning's barrier and cost are far higher than writing prompts.
+
+**2. Can RAG solve it?**
+
+If your need is "make the model know more," RAG is usually better than fine-tuning — updating knowledge doesn't require retraining.
+
+**3. Do you have enough data?**
+
+Fine-tuning requires high-quality training data. A few dozen samples isn't enough; hundreds is the starting point. Without good data, fine-tuning won't produce good results.
+
+## The LLM Customization Spectrum
+
+From simple to complex:
+
+```
+Prompt Engineering → Few-shot → RAG → Fine-tuning → Pre-training
+Cost: Low ──────────────────────────────────────→ High
+Flexibility: High ──────────────────────────────→ Low
+```
+
+| Method | Changes | Cost | Data Needed | Use Case |
+|---|---|---|---|---|
+| Prompt Engineering | Input | Nearly zero | None | Starting point for most tasks |
+| Few-shot | Input (with examples) | Extra token cost | A few examples | Formatted output, classification |
+| RAG | Input (with retrieved docs) | Vector DB cost | Document corpus | Knowledge base Q&A |
+| Fine-tuning | Model weights | Training + GPU | Hundreds to thousands | Style/format, domain specialization |
+| Pre-training | Model weights (from scratch) | Extreme | Massive data | Building foundation models |
+
+## When Fine-Tuning Makes Sense
+
+### 1. Style and Format Customization
+
+Make the model consistently respond in a specific style — your brand voice, specific document formats, fixed response structures.
+
+Prompts can do this too, but fine-tuning makes the model "internalize" the style without needing long System Prompts every time.
+
+### 2. Domain Specialization
+
+Make the model perform better in a specific domain — legal documents, medical reports, financial analysis. Fine-tuning helps the model better understand domain terminology and conventions.
+
+### 3. Cost Optimization
+
+A fine-tuned small model may match a large model on specific tasks. Fine-tuning Llama 3.1 8B for customer support might approach GPT-4 quality at much lower cost.
+
+### 4. Reducing Token Usage
+
+After fine-tuning, you no longer need long System Prompts and few-shot examples in every request. The model has "memorized" them, significantly reducing per-request token count.
+
+### 5. Improving Consistency
+
+Fine-tuned models produce more consistent, predictable output for specific tasks, reducing "creative improvisation."
+
+## When Fine-Tuning Doesn't Fit
+
+**Need up-to-date knowledge**: Fine-tuning can't teach a model about events after training. Use RAG.
+
+**General capability improvement**: Fine-tuning may improve target tasks but degrade others (catastrophic forgetting).
+
+**Insufficient data**: Fine-tuning on a few dozen low-quality samples may perform worse than a good prompt.
+
+**Rapid iteration**: Fine-tuning takes time and money. If requirements change frequently, Prompt Engineering is more flexible.
+
+## The Basic Fine-Tuning Flow
+
+```
+1. Prepare training data
+   ↓
+2. Choose base model
+   ↓
+3. Configure training parameters
+   ↓
+4. Train (usually with LoRA)
+   ↓
+5. Evaluate results
+   ↓
+6. Deploy
+```
+
+Following chapters cover each step in detail.
+
+## Choosing a Base Model
+
+| Model | Sizes | Strengths |
+|---|---|---|
+| Llama 3.1 | 8B / 70B | Most active community, best tooling |
+| Qwen 2.5 | 7B / 72B | Strong multilingual capabilities |
+| Mistral | 7B | Efficient, good for small-medium tasks |
+| Gemma 2 | 9B / 27B | Google, consistent quality |
+
+**General advice: start with 7–8B models.** Training costs are manageable and results are usually good enough. Only go larger when smaller models genuinely aren't sufficient.
+
+## Key Takeaways
+
+1. **Try Prompt Engineering and RAG before fine-tuning.** Many scenarios don't require fine-tuning.
+2. **Fine-tuning changes model behavior, not knowledge volume.** For knowledge, use RAG.
+3. **Fine-tuning excels at style customization, domain specialization, and cost optimization.** These are its unique advantages.
+4. **Data quality determines fine-tuning results.** Without good data, fine-tuning is a waste of time and money.
+5. **Start with 7–8B models.** Low training cost, fast iteration, usually good enough.

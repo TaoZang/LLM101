@@ -1,0 +1,173 @@
+---
+title: "Advanced Prompting Techniques"
+order: 6
+tags: ["prompt", "advanced", "techniques"]
+---
+
+## Beyond the Basics
+
+After mastering prompt fundamentals, few-shot, and CoT, there are more advanced techniques for tackling complex problems.
+
+## ReAct: Reasoning + Acting
+
+**ReAct** (Reasoning + Acting) is a pattern where the model **alternates between reasoning and taking actions**. It's the core framework for AI Agents.
+
+```
+Question: Who won the 2024 Nobel Prize in Physics? Where do they work?
+
+Thought: I need to look up the 2024 Nobel Prize in Physics.
+Action: Search "2024 Nobel Prize Physics winner"
+Observation: John Hopfield and Geoffrey Hinton won the 2024 Nobel Prize in Physics.
+Thought: Found the winners, now I need their affiliations.
+Action: Search "John Hopfield university" and "Geoffrey Hinton university"
+Observation: Hopfield is at Princeton, Hinton is at University of Toronto.
+Thought: I now have complete information.
+Answer: The 2024 Nobel Prize in Physics was awarded to John Hopfield
+(Princeton University) and Geoffrey Hinton (University of Toronto).
+```
+
+ReAct's value: the model doesn't just reason — it **takes actions based on reasoning** (searching, calling tools), then continues reasoning based on results. This is covered in depth in the Agents track.
+
+## Self-Reflection and Correction
+
+Have the model **review its own output**, then fix errors:
+
+```
+Complete the following task:
+
+Step 1: Write the solution
+Step 2: Review your solution and list potential issues
+Step 3: Revise based on the review
+Step 4: Output the final version
+```
+
+Practical example:
+
+```
+Write a Python function to validate whether a string is a valid IPv4 address.
+
+After writing, please:
+1. List 5 edge test cases (both passing and failing)
+2. Mentally trace your function with these cases
+3. If you find issues, fix and output the final version
+```
+
+This "write-review-fix" pattern significantly improves output quality, especially for code generation.
+
+## Prompt Chaining
+
+Break a complex task into **multiple steps**, each with a dedicated prompt, where one step's output feeds the next:
+
+```
+Step 1: Analyze requirements
+Input: User requirements description
+Output: Structured feature list
+
+Step 2: Design API
+Input: Feature list from Step 1
+Output: API endpoint definitions
+
+Step 3: Generate code
+Input: API definitions from Step 2
+Output: Implementation code
+
+Step 4: Generate tests
+Input: Code from Step 3
+Output: Test cases
+```
+
+```python
+# Implementation
+def prompt_chain(user_requirement):
+    # Step 1
+    features = llm("Analyze these requirements, output feature list: " + user_requirement)
+
+    # Step 2
+    api_design = llm("Design REST APIs for these features: " + features)
+
+    # Step 3
+    code = llm("Implement these APIs: " + api_design)
+
+    # Step 4
+    tests = llm("Write tests for this code: " + code)
+
+    return code, tests
+```
+
+Prompt chaining advantages:
+- **Each step is simple and focused**, easier for the model to handle
+- **You can inspect and intervene at intermediate steps**
+- **Different models for different steps** — cheap models for simple steps, strong models for critical ones
+
+## Meta-Prompting: Using LLMs to Write Prompts
+
+An interesting technique: **have the LLM help you optimize your prompt**.
+
+```
+I need a prompt that makes an LLM review Python code.
+The goal is to find potential bugs, performance issues, and security vulnerabilities.
+
+Write me an effective System Prompt that includes:
+- Role definition
+- Specific review dimensions
+- Output format
+- Examples
+```
+
+Then use the generated prompt for the actual task. If it doesn't work well, feed the results back and ask for optimization.
+
+This is essentially **automated prompt engineering**, useful when iterating on complex prompts.
+
+## Delimiter Techniques
+
+In complex prompts, use clear delimiters to organize content:
+
+```
+### Task Description
+Analyze the following code for performance issues.
+
+### Constraints
+- Only flag issues with time complexity O(n²) or worse
+- Ignore readability issues
+- Provide optimization suggestions for each issue
+
+### Input Code
+```python
+# code here
+```
+
+### Output Format
+JSON array, each element containing line, issue, suggestion
+```
+
+Common delimiters:
+- `###` or `---`: Separate sections
+- ```` ``` ````: Code blocks
+- `<tag></tag>`: XML tags, good for structured data
+- `"""`: Wrap long text
+
+## Temperature and Sampling Parameters
+
+Beyond temperature, several sampling parameters affect output:
+
+| Parameter | Effect | Recommended |
+|---|---|---|
+| `temperature` | Controls randomness | 0 (precise) / 0.7 (creative) |
+| `top_p` | Sample from top p% probability tokens | 0.9–0.95 |
+| `top_k` | Sample from top k highest probability tokens | 40–100 |
+| `frequency_penalty` | Penalize frequently occurring tokens | 0–0.5 |
+| `presence_penalty` | Penalize tokens that have appeared | 0–0.5 |
+| `max_tokens` | Maximum output length | Set per task |
+
+Practical tips:
+- **Most of the time, only adjust temperature** — keep others at defaults
+- **Don't heavily adjust both temperature and top_p** — their effects compound and may cause incoherent output
+- **Use temperature=0 for code generation** — you want deterministic, predictable output
+
+## Key Takeaways
+
+1. **ReAct is the reasoning + action loop pattern**, the core Agent framework. The model dynamically adjusts next steps based on observations.
+2. **Self-reflection improves output quality** — have the model check and fix its own output, especially useful for code generation.
+3. **Prompt chaining breaks complex tasks into simple steps** — dedicated prompts per step, more controllable, easier to debug.
+4. **Meta-Prompting uses LLMs to write prompts** — automated iteration, useful for optimizing complex prompts.
+5. **Temperature is the most important sampling parameter.** Precision tasks → 0, creative tasks → 0.7. Keep others at defaults.

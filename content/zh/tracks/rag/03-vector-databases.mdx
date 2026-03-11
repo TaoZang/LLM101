@@ -1,0 +1,186 @@
+---
+title: "向量数据库"
+order: 3
+tags: ["rag", "vector-db", "storage"]
+---
+
+## 为什么需要向量数据库
+
+有了 Embedding 向量，你需要一个地方来存储和搜索它们。
+
+最朴素的方法：把所有向量放在内存里，每次查询时和所有向量算余弦相似度，返回最相似的 Top-K。这在几百个向量时可行，但当文档量达到百万级别时，暴力搜索就太慢了。
+
+**向量数据库**专门为这个问题而生——高效存储和搜索高维向量。
+
+## 核心概念
+
+### 近似最近邻搜索（ANN）
+
+向量数据库不做精确搜索（太慢），而是做**近似最近邻搜索**（Approximate Nearest Neighbor）。它可能不会返回绝对最相似的结果，但会以极快的速度返回非常接近的结果。
+
+对于 RAG 来说，这完全够了——你不需要 100% 精确的第一名，你需要的是"大致最相关的前几个"。
+
+### 索引类型
+
+向量数据库通过**索引**来加速搜索。主要的索引类型：
+
+**HNSW（Hierarchical Navigable Small World）**
+- 最常用的索引类型
+- 搜索速度快，精度高
+- 内存占用较大
+- 适合大多数场景
+
+**IVF（Inverted File Index）**
+- 先把向量聚类，搜索时只搜索相关的聚类
+- 内存效率更高
+- 搜索速度略慢于 HNSW
+- 适合超大规模数据
+
+**Flat（暴力搜索）**
+- 精确搜索，遍历所有向量
+- 最准确但最慢
+- 只适合小数据量或做精度基准测试
+
+## 主流向量数据库
+
+### Chroma
+
+最适合快速开始的选择。
+
+```python
+pip install chromadb
+```
+
+```python
+import chromadb
+
+# 创建客户端（本地存储）
+client = chromadb.Client()
+# 或持久化存储
+# client = chromadb.PersistentClient(path="./chroma_db")
+
+# 创建集合
+collection = client.create_collection(
+    name="knowledge_base",
+    metadata={"hnsw:space": "cosine"}
+)
+
+# 添加文档
+collection.add(
+    ids=["doc1", "doc2", "doc3"],
+    documents=[
+        "退款政策：购买后 30 天内可申请全额退款。",
+        "客服工作时间：周一至周五 9:00-18:00。",
+        "产品保修期为一年，从购买日起算。",
+    ],
+    metadatas=[
+        {"source": "policy.md"},
+        {"source": "faq.md"},
+        {"source": "warranty.md"},
+    ]
+)
+
+# 搜索
+results = collection.query(
+    query_texts=["怎么退货？"],
+    n_results=2
+)
+
+print(results["documents"])
+# [['退款政策：购买后 30 天内可申请全额退款。', ...]]
+```
+
+Chroma 的优势：
+- 内置 Embedding（默认用 all-MiniLM-L6-v2）
+- API 极简，几行代码就能跑
+- 支持本地存储和内存模式
+- 适合原型和小型项目
+
+### pgvector
+
+PostgreSQL 的向量搜索扩展。如果你已经在用 PostgreSQL，这是最自然的选择。
+
+```sql
+-- 启用扩展
+CREATE EXTENSION vector;
+
+-- 创建表
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    content TEXT,
+    embedding vector(1536)
+);
+
+-- 插入数据
+INSERT INTO documents (content, embedding)
+VALUES ('退款政策...', '[0.1, 0.2, ...]');
+
+-- 向量搜索
+SELECT content, embedding <=> '[0.15, 0.22, ...]' AS distance
+FROM documents
+ORDER BY embedding <=> '[0.15, 0.22, ...]'
+LIMIT 5;
+```
+
+优势：
+- 和现有 PostgreSQL 基础设施集成
+- SQL 查询，向量搜索和常规查询可以组合
+- 支持元数据过滤
+- 运维成本低（不需要额外维护一个数据库）
+
+### 其他选项
+
+| 数据库 | 类型 | 特点 |
+|---|---|---|
+| **Pinecone** | 云托管 | 全托管，零运维，按用量付费 |
+| **Weaviate** | 开源/云 | 功能丰富，支持混合搜索 |
+| **Qdrant** | 开源/云 | Rust 实现，性能优秀 |
+| **Milvus** | 开源 | 大规模场景，分布式架构 |
+| **FAISS** | 库（非数据库） | Meta 出品，纯向量搜索库 |
+
+## 如何选择
+
+| 需求 | 推荐 |
+|---|---|
+| 快速原型 | Chroma |
+| 已有 PostgreSQL | pgvector |
+| 不想运维 | Pinecone |
+| 需要高性能 | Qdrant 或 Milvus |
+| 需要混合搜索 | Weaviate |
+| 只需要搜索库 | FAISS |
+
+对于大多数项目，**从 Chroma 开始**是最好的策略——它足够简单，能让你专注于 RAG 的核心逻辑。等到需要生产级部署时，再迁移到 pgvector 或 Qdrant。
+
+## 元数据过滤
+
+向量搜索找的是"语义最相似"，但有时你还需要附加条件：
+
+```python
+# 只在特定来源中搜索
+results = collection.query(
+    query_texts=["怎么退货？"],
+    n_results=3,
+    where={"source": "policy.md"}  # 元数据过滤
+)
+
+# 组合过滤
+results = collection.query(
+    query_texts=["怎么退货？"],
+    n_results=3,
+    where={
+        "$and": [
+            {"source": "policy.md"},
+            {"updated_after": {"$gte": "2024-01-01"}}
+        ]
+    }
+)
+```
+
+元数据过滤是"先筛选，再搜索"——先缩小候选范围，再在范围内做向量搜索。这对多租户、多类别的知识库非常重要。
+
+## 要点总结
+
+1. **向量数据库专门为高维向量的存储和搜索设计。** 它用 ANN 算法实现高效的相似度搜索。
+2. **HNSW 是最常用的索引类型**——速度快、精度高，适合大多数场景。
+3. **从 Chroma 开始原型**，生产环境考虑 pgvector（已有 PostgreSQL）或 Qdrant。
+4. **元数据过滤 + 向量搜索是标准组合。** 先缩小范围，再做语义搜索。

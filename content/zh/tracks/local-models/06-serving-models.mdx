@@ -1,0 +1,193 @@
+---
+title: "将本地模型作为 API 提供服务"
+order: 6
+tags: ["local", "api", "deployment"]
+---
+
+## 从命令行到 API
+
+在终端里和模型对话只是第一步。要把本地模型集成到你的应用中，你需要一个 **HTTP API**。好消息是：几乎所有本地推理工具都提供 OpenAI 兼容的 API 接口。
+
+## OpenAI 兼容 API：事实标准
+
+OpenAI 的 Chat Completions API 格式已经成为 LLM API 的事实标准。几乎所有本地推理工具都兼容这个格式：
+
+```bash
+POST /v1/chat/completions
+{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
+  ],
+  "temperature": 0.7,
+  "stream": true
+}
+```
+
+这意味着：你的代码只需要改一行 `base_url`，就能在本地模型和云端 API 之间无缝切换。
+
+## 常见服务方案
+
+### 1. Ollama
+
+最简单的方案。安装后自动运行 API 服务。
+
+```bash
+# 启动（安装后自动运行）
+ollama serve
+
+# API 地址
+# http://localhost:11434/v1/chat/completions
+```
+
+优点：零配置、自动管理模型、支持并发。
+缺点：参数定制有限，不适合高性能生产场景。
+
+### 2. llama-server（llama.cpp）
+
+轻量级，更多控制。
+
+```bash
+llama-server \
+  -m model.gguf \
+  -c 8192 \
+  -ngl 99 \
+  --port 8080
+```
+
+优点：参数精细控制、资源占用小。
+缺点：需要手动管理模型文件。
+
+### 3. vLLM
+
+面向生产的高性能推理引擎。
+
+```bash
+pip install vllm
+
+vllm serve meta-llama/Llama-3.1-8B-Instruct \
+  --port 8000 \
+  --max-model-len 8192
+```
+
+核心优势：
+- **PagedAttention**：高效管理 KV Cache，显著提升吞吐量
+- **连续批处理**：同时处理多个请求，GPU 利用率更高
+- **高并发**：适合多用户同时使用的场景
+
+缺点：需要 NVIDIA GPU，不支持 GGUF（使用 SafeTensors 格式），安装和配置比 Ollama 复杂。
+
+### 4. Text Generation Inference (TGI)
+
+Hugging Face 出品，类似 vLLM 的定位。
+
+```bash
+docker run --gpus all \
+  -p 8080:80 \
+  ghcr.io/huggingface/text-generation-inference \
+  --model-id meta-llama/Llama-3.1-8B-Instruct
+```
+
+优点：Docker 部署方便，Hugging Face 生态集成好。
+缺点：同样需要 NVIDIA GPU。
+
+## 方案对比
+
+| | Ollama | llama-server | vLLM | TGI |
+|---|---|---|---|---|
+| 上手难度 | 极简 | 简单 | 中等 | 中等 |
+| 模型格式 | GGUF | GGUF | SafeTensors | SafeTensors |
+| GPU 支持 | 多平台 | 多平台 | NVIDIA | NVIDIA |
+| CPU 支持 | ✅ | ✅ | ❌ | ❌ |
+| 并发性能 | 一般 | 一般 | 优秀 | 优秀 |
+| 连续批处理 | ❌ | ❌ | ✅ | ✅ |
+| 适合场景 | 开发/个人使用 | 轻量部署 | 生产环境 | 生产环境 |
+
+## 代码集成
+
+所有这些服务都兼容 OpenAI SDK，代码几乎相同：
+
+### Python
+
+```python
+from openai import OpenAI
+
+# 切换不同后端只需改 base_url
+client = OpenAI(
+    base_url="http://localhost:11434/v1",  # Ollama
+    # base_url="http://localhost:8080/v1",  # llama-server
+    # base_url="http://localhost:8000/v1",  # vLLM
+    api_key="not-needed"
+)
+
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[
+        {"role": "system", "content": "你是一个有帮助的助手。"},
+        {"role": "user", "content": "用 Python 实现二分查找"}
+    ],
+    temperature=0.3
+)
+
+print(response.choices[0].message.content)
+```
+
+### TypeScript
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:11434/v1',
+  apiKey: 'not-needed',
+});
+
+const stream = await client.chat.completions.create({
+  model: 'llama3.1:8b',
+  messages: [{ role: 'user', content: '解释一下 async/await' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+}
+```
+
+### 流式输出
+
+流式输出（streaming）对用户体验很重要——不用等整个回答生成完再显示：
+
+```python
+stream = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[{"role": "user", "content": "写一首诗"}],
+    stream=True
+)
+
+for chunk in stream:
+    content = chunk.choices[0].delta.content
+    if content:
+        print(content, end="", flush=True)
+```
+
+## 生产环境注意事项
+
+如果你打算在生产环境中使用本地模型，还需要考虑：
+
+**负载均衡**：多个模型实例配合 Nginx 或 Caddy 做负载均衡。
+
+**健康检查**：定期检查推理服务是否存活。
+
+**请求队列**：LLM 推理慢，需要合理的请求排队和超时机制。
+
+**监控**：关注 GPU 利用率、推理延迟、内存使用等指标。
+
+**安全**：不要把推理 API 直接暴露到公网。添加认证、限流。
+
+## 要点总结
+
+1. **OpenAI 兼容 API 是标准接口。** 所有主流本地推理工具都支持，代码迁移成本极低。
+2. **Ollama 适合开发和个人使用**，vLLM 适合生产环境。根据你的需求选择。
+3. **代码集成只需改 `base_url`**——用 OpenAI SDK 连接本地模型，切换后端零成本。
+4. **生产部署需要额外考虑负载均衡、监控和安全**，不只是把模型跑起来。

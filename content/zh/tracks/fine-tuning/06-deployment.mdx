@@ -1,0 +1,192 @@
+---
+title: "部署微调模型"
+order: 6
+tags: ["fine-tuning", "deployment", "serving"]
+---
+
+## 从训练到上线
+
+模型训练完了，评估也通过了。接下来的问题是：**怎么把它部署到生产环境？**
+
+## 合并 LoRA 权重
+
+如果你用 LoRA 微调，第一步是决定是否合并权重。
+
+### 动态加载（不合并）
+
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
+model = PeftModel.from_pretrained(base_model, "./lora_adapter")
+```
+
+适合：
+- 同一个基础模型需要搭配多个 LoRA
+- 需要频繁切换不同的 LoRA
+
+### 合并后保存
+
+```python
+merged_model = model.merge_and_unload()
+merged_model.save_pretrained("./merged_model")
+tokenizer.save_pretrained("./merged_model")
+```
+
+适合：
+- 只需要一个最终模型
+- 需要进一步转换格式（如 GGUF）
+- 生产部署
+
+**大多数生产场景推荐合并。** 推理时没有额外开销，部署更简单。
+
+## 模型格式转换
+
+### 转换为 GGUF（本地部署）
+
+合并后的模型可以转换为 GGUF 格式，用 Ollama 或 llama.cpp 部署：
+
+```bash
+# 用 llama.cpp 的转换脚本
+python convert_hf_to_gguf.py ./merged_model --outfile model-f16.gguf
+
+# 量化（可选，减小体积）
+./llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M
+```
+
+### 在 Ollama 中使用
+
+创建一个 Modelfile：
+
+```dockerfile
+FROM ./model-Q4_K_M.gguf
+
+SYSTEM "你是一个专业的客服助手。"
+PARAMETER temperature 0.3
+```
+
+```bash
+ollama create my-finetuned-model -f Modelfile
+ollama run my-finetuned-model
+```
+
+### 保持 SafeTensors（GPU 部署）
+
+如果用 vLLM 或 TGI 部署，直接使用合并后的 SafeTensors 格式：
+
+```bash
+# vLLM
+vllm serve ./merged_model --port 8000
+
+# 或上传到 Hugging Face
+huggingface-cli upload my-org/my-model ./merged_model
+```
+
+## 部署方案选择
+
+| 方案 | 硬件 | 适合 | 性能 |
+|---|---|---|---|
+| Ollama + GGUF | CPU / Apple Silicon / GPU | 个人使用、小团队 | 单用户流畅 |
+| llama-server + GGUF | 同上 | 需要更多控制 | 同上 |
+| vLLM + SafeTensors | NVIDIA GPU | 高并发生产环境 | 高吞吐 |
+| TGI + SafeTensors | NVIDIA GPU | 生产环境 | 高吞吐 |
+| Hugging Face Inference Endpoints | 云端 GPU | 不想管基础设施 | 弹性扩缩 |
+
+## 性能优化
+
+### KV Cache
+
+推理时，模型会缓存之前 token 的键值（Key-Value）对，避免重复计算。这是最基本的推理优化，大多数框架已默认开启。
+
+### 连续批处理（Continuous Batching）
+
+vLLM 和 TGI 的核心优势——不同请求的 token 生成交错执行，显著提高 GPU 利用率。
+
+```
+传统批处理：
+请求 1: [生成中...............] 等请求2完成
+请求 2: [生成中.......] 已完成，但要等请求1
+
+连续批处理：
+请求 1: [生成中...............]
+请求 2: [生成中.......] → 完成后立即释放，新请求加入
+请求 3:          [生成中...........]
+```
+
+### 量化部署
+
+生产环境也可以用量化模型。INT8 或 INT4 量化在大多数任务上质量损失很小：
+
+```python
+# vLLM 量化推理
+vllm serve ./merged_model \
+  --quantization awq \
+  --port 8000
+```
+
+## 成本考量
+
+### 自建 vs 云端
+
+| | 自建 | 云端（API） |
+|---|---|---|
+| 前期成本 | 高（GPU 硬件） | 低 |
+| 运行成本 | 电费 + 运维 | 按量付费 |
+| 适合 | 高频使用，对延迟敏感 | 低频使用，弹性需求 |
+| 扩展性 | 需要手动扩展 | 自动扩展 |
+
+### 成本估算
+
+```
+自建（RTX 4090, 24GB）:
+- 硬件：~¥14,000
+- 可运行：7B Q4 模型，约 50-80 tokens/s
+- 电费：~¥200/月（24/7 运行）
+- 回本周期：取决于使用量
+
+云端（如 RunPod, Lambda）:
+- A100 80GB: ~$1.5/小时
+- 适合按需使用，不需要 24/7 运行
+```
+
+## 监控与迭代
+
+上线后不是结束，而是新循环的开始：
+
+### 监控指标
+
+```python
+# 关键指标
+metrics = {
+    "latency_p50": "50%请求的延迟",
+    "latency_p99": "99%请求的延迟",
+    "throughput": "每秒处理的请求数",
+    "error_rate": "错误率",
+    "user_satisfaction": "用户满意度",
+    "gpu_utilization": "GPU 利用率",
+}
+```
+
+### 持续改进循环
+
+```
+收集用户反馈
+  ↓
+识别模型表现不好的 case
+  ↓
+将这些 case 加入训练数据
+  ↓
+重新微调
+  ↓
+评估 → 部署 → 继续收集反馈
+```
+
+这个循环让模型持续改进。每次迭代不需要大量新数据——几十条针对性的数据就能解决特定问题。
+
+## 要点总结
+
+1. **LoRA 权重合并后再部署是最常见的路径。** 合并后可以转为 GGUF（本地）或 SafeTensors（GPU）。
+2. **个人/小团队用 Ollama + GGUF**，高并发生产环境用 vLLM + SafeTensors。
+3. **量化部署在大多数场景下质量损失很小**，但能显著降低硬件要求和成本。
+4. **部署上线是迭代的起点，不是终点。** 收集反馈 → 改进数据 → 重新微调，形成持续改进循环。

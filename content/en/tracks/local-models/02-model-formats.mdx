@@ -1,0 +1,102 @@
+---
+title: "Model Formats and Quantization"
+order: 2
+tags: ["local", "quantization", "formats"]
+---
+
+## What's Inside a Model File
+
+When you download an LLM, you're downloading **weight parameters** — billions of floating-point numbers that store everything the model learned from its training data.
+
+These parameters need to be saved in some file format. Different formats have different characteristics, and understanding them helps you make better choices.
+
+## Major Model Formats
+
+### GGUF
+
+**GGUF** (GPT-Generated Unified Format) is the dominant format for local inference, defined by the llama.cpp project.
+
+Key features:
+- **Single file**: All model information (weights, tokenizer, metadata) packed into one file
+- **Built-in quantization**: Multiple quantization schemes supported
+- **Cross-platform**: Works on CPU, GPU, and Metal
+- **Ollama's underlying format**: When you `ollama pull` a model, it's GGUF under the hood
+
+GGUF filenames typically include quantization info, like `llama-3-8b-Q4_K_M.gguf`, so you can see the model size and quantization level at a glance.
+
+### SafeTensors
+
+**SafeTensors** is Hugging Face's format, primarily for GPU inference and training.
+
+Key features:
+- **Safe**: No pickle serialization, avoiding deserialization attack risks
+- **Fast loading**: Supports memory mapping for quick load times
+- **Standard format for GPU training and inference**
+- Usually saved as **multiple shard files**
+
+If you use the `transformers` library or vLLM for inference, you're using SafeTensors.
+
+### PyTorch (.bin) and GGML
+
+- **PyTorch .bin**: Legacy format using pickle serialization, has security risks, being replaced by SafeTensors
+- **GGML**: GGUF's predecessor, outdated, not recommended
+
+## Quantization: Trading Precision for Space
+
+A 7B parameter model stored in FP16 (16-bit floating point) requires about 14GB of memory. A 70B model needs 140GB — far beyond consumer GPU capacity.
+
+**Quantization** is the key technology: **represent each parameter with fewer bits, trading some precision for smaller memory footprint and faster inference.**
+
+The principle is simple. FP16 uses 16 bits per parameter, but many parameters don't need that much precision. Using 4 bits instead cuts memory usage to 1/4.
+
+## Quantization Levels Explained
+
+| Level | Bits per param | 7B model size | Quality loss | Use case |
+|---|---|---|---|---|
+| F16 | 16 bit | ~14 GB | None | Best choice when you have enough VRAM |
+| Q8_0 | 8 bit | ~7 GB | Minimal | Quality-first, space available |
+| Q6_K | 6 bit | ~5.5 GB | Very small | Good balance of quality and space |
+| Q5_K_M | 5 bit | ~4.8 GB | Small | Recommended general choice |
+| Q4_K_M | 4 bit | ~4.0 GB | Slight | Most popular, best value |
+| Q3_K_M | 3 bit | ~3.3 GB | Noticeable | When memory is tight |
+| Q2_K | 2 bit | ~2.5 GB | Severe | Not recommended, too much quality loss |
+
+The `K` in the name indicates k-quant method (smarter quantization), `M` means Medium precision. There's also `S` (Small, smaller but lower quality) and `L` (Large, bigger but better quality).
+
+## How to Choose a Quantization Level
+
+Practical decision flow:
+
+1. **VRAM is sufficient → F16 or Q8**: Best quality, no compromise needed
+2. **Want best value → Q4_K_M**: The community's top recommendation, minimal quality loss with significant memory savings
+3. **Memory is tight → Q5_K_M or Q4_K_M**: Balance between quality and space
+4. **Very tight → Q3_K_M**: Usable, but noticeable quality degradation
+5. **Q2 → Basically don't**: Quality loss is too severe; better to use a smaller model
+
+A common misconception: **a 70B model at Q2 is usually worse than a 7B model at Q8.** Excessive quantization often hurts more than switching to a smaller model.
+
+## Estimating Model Size
+
+Quick estimation formula:
+
+```
+Memory needed ≈ Parameters (billions) × Bits per parameter ÷ 8
+
+Example: 7B model with Q4 quantization
+7 × 4 ÷ 8 = 3.5 GB (actual usage ~4 GB with overhead)
+```
+
+This helps you quickly determine if a model can run on your hardware.
+
+## Where to Find Quantized Models
+
+- **Hugging Face**: Search for model name + "GGUF", e.g., "llama 3 8b GGUF"
+- **TheBloke**: The most well-known quantized model publisher on Hugging Face (though many model authors now publish GGUF themselves)
+- **Ollama model library**: `ollama list` to see available models, pre-configured and ready to go
+
+## Key Takeaways
+
+1. **GGUF is the standard format for local inference**, SafeTensors for GPU training and inference. Choose based on your use case.
+2. **Quantization is the key to running large models locally** — trading precision for space. Q4_K_M is the most popular choice with the best value.
+3. **Don't over-quantize.** Q2 is generally unusable. Rather than heavily quantizing a large model, use a smaller model at a higher quantization level.
+4. **Model size ≈ Parameters × Bits ÷ 8.** Use this formula to quickly assess hardware feasibility.

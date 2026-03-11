@@ -1,0 +1,188 @@
+---
+title: "The Training Process"
+order: 4
+tags: ["fine-tuning", "training", "hands-on"]
+---
+
+## Training Tools Overview
+
+Several mainstream tools for fine-tuning LLMs:
+
+| Tool | Characteristics | Best For |
+|---|---|---|
+| **Hugging Face (transformers + PEFT + TRL)** | Most flexible, component-based | Full control scenarios |
+| **Axolotl** | YAML config-driven, simplified workflow | Quick fine-tuning without much code |
+| **Unsloth** | Speed and memory optimized | Limited resources, efficiency-focused |
+| **LLaMA Factory** | Web UI, beginner-friendly | Prefer graphical interface |
+
+**Recommended path: start with Unsloth or Axolotl to get running, then learn the full Hugging Face stack for complete control.**
+
+## Quick Start with Unsloth
+
+Unsloth is one of the most efficient fine-tuning tools — 2–5x faster than standard implementations, 60% less memory.
+
+```python
+from unsloth import FastLanguageModel
+from trl import SFTTrainer
+from transformers import TrainingArguments
+from datasets import load_dataset
+
+# 1. Load model (auto-applies QLoRA)
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/Llama-3.1-8B-Instruct",
+    max_seq_length=2048,
+    load_in_4bit=True,
+)
+
+# 2. Configure LoRA
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                     "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+)
+
+# 3. Load data
+dataset = load_dataset("json", data_files="training_data.jsonl")
+
+# 4. Train
+trainer = SFTTrainer(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=dataset["train"],
+    args=TrainingArguments(
+        output_dir="./output",
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        num_train_epochs=3,
+        learning_rate=2e-4,
+        warmup_steps=10,
+        logging_steps=10,
+        save_steps=100,
+        fp16=True,
+    ),
+)
+
+trainer.train()
+
+# 5. Save
+model.save_pretrained("./lora_adapter")
+```
+
+## Key Hyperparameters
+
+### Learning Rate
+
+Controls the magnitude of each parameter update. **The most important hyperparameter in fine-tuning.**
+
+```
+Too high → Unstable training, loss oscillates or diverges
+Too low → Learning too slow, needs more epochs
+```
+
+| Method | Recommended LR |
+|---|---|
+| Full fine-tuning | 1e-5 to 5e-5 |
+| LoRA | 1e-4 to 3e-4 |
+| QLoRA | 2e-4 (Unsloth default) |
+
+### Epochs
+
+Number of complete passes through the training data.
+
+```
+Too few → Underfitting, model hasn't learned enough
+Too many → Overfitting, model "memorizes answers" instead of "learning patterns"
+```
+
+**Recommended: 1–3 epochs.** With lots of data, 1 may suffice. With less data, go up to 3. Beyond 5 usually means overfitting.
+
+### Batch Size
+
+How many samples per update. Limited by VRAM.
+
+Effective batch size = `per_device_train_batch_size` × `gradient_accumulation_steps`
+
+```python
+per_device_train_batch_size = 4
+gradient_accumulation_steps = 4
+# Effective batch size = 4 × 4 = 16
+```
+
+When VRAM can't handle a large batch, use gradient accumulation to simulate it.
+
+### Warmup
+
+Learning rate gradually increases from 0 to the set value at training start. Prevents large early updates from destroying pre-trained knowledge.
+
+```
+Recommended: 3–10% of total steps, or 10–100 steps
+```
+
+## Monitoring Training
+
+### Loss Curves
+
+The most important metric during training is **loss**:
+
+```
+Normal loss curve:
+- Rapid decline → slow decline → plateau
+
+Overfitting signals:
+- Training loss keeps dropping
+- Validation loss starts rising ← danger!
+
+Underfitting signals:
+- Loss drops very slowly or barely moves
+- Final loss value is still high
+```
+
+### Practical Monitoring
+
+```python
+args = TrainingArguments(
+    logging_steps=10,
+    eval_strategy="steps",
+    eval_steps=50,
+    save_strategy="steps",
+    save_steps=100,
+    load_best_model_at_end=True,
+)
+```
+
+Visualize with TensorBoard or Weights & Biases:
+
+```bash
+tensorboard --logdir ./output/runs
+```
+
+## Common Issues
+
+### Overfitting
+
+**Symptoms**: Training loss is very low but real-world performance is poor; model tends to "copy-paste" training data responses.
+
+**Solutions**: Fewer epochs, more data, higher dropout, lower learning rate, smaller rank.
+
+### Catastrophic Forgetting
+
+**Symptoms**: Model improves on target task but general capabilities degrade noticeably — forgets math, can't write code anymore.
+
+**Solutions**: Mix general-purpose data into training, lower learning rate, fewer epochs, use LoRA instead of full fine-tuning (LoRA naturally mitigates this).
+
+### Abnormal Loss Curves
+
+**Loss oscillating**: Learning rate too high — reduce it.
+**Loss not decreasing**: Learning rate too low, or data format issues (model isn't learning what you intended).
+**Loss spike**: Possibly hit anomalous data — check data quality.
+
+## Key Takeaways
+
+1. **Start with Unsloth or Axolotl** — they simplify configuration, getting fine-tuning running in dozens of lines.
+2. **Learning rate is the most important hyperparameter.** LoRA: 2e-4, full fine-tuning: 2e-5.
+3. **1–3 epochs is usually sufficient.** Beyond 5 likely means overfitting.
+4. **Loss curves are the core tool for judging training status.** Training loss down + validation loss up = overfitting.
+5. **Catastrophic forgetting is a common fine-tuning pitfall.** Mitigate with LoRA, low learning rate, and mixing in general data.

@@ -1,0 +1,144 @@
+---
+title: "llama.cpp and the GGUF Ecosystem"
+order: 4
+tags: ["local", "llama-cpp", "inference"]
+---
+
+## The Engine Behind Ollama
+
+When you run a model with Ollama, the actual inference is done by **llama.cpp** — a pure C/C++ LLM inference engine.
+
+Why should you know about llama.cpp? Because when you need **finer control** — custom inference parameters, performance tuning, integration into your own applications — using llama.cpp directly gives you more flexibility.
+
+## What is llama.cpp
+
+llama.cpp was started by Georgi Gerganov in 2023, originally to run Meta's LLaMA models on a MacBook. It has since grown into a universal inference engine supporting virtually all major open-source models.
+
+Core features:
+- **Pure C/C++**, no Python dependencies, compiles to a single binary
+- **Multi-hardware support**: CPU (x86, ARM), NVIDIA GPU (CUDA), Apple GPU (Metal), AMD GPU (ROCm)
+- **Defines the GGUF format** — the de facto standard for local models
+- **Heavily optimized**: Hand-written SIMD instructions, memory mapping, various quantization schemes
+
+## Building from Source
+
+In most cases you don't need to compile yourself — Ollama bundles everything. But if you want deep customization:
+
+```bash
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+
+# macOS (Metal GPU acceleration)
+cmake -B build
+cmake --build build --config Release
+
+# Linux with CUDA
+cmake -B build -DGGML_CUDA=ON
+cmake --build build --config Release
+
+# CPU only
+cmake -B build
+cmake --build build --config Release
+```
+
+This produces several key tools:
+- `llama-cli`: Command-line chat tool
+- `llama-server`: HTTP API server
+- `llama-quantize`: Model quantization tool
+
+## Command-Line Inference
+
+```bash
+# Basic generation
+./build/bin/llama-cli \
+  -m models/llama-3-8b-Q4_K_M.gguf \
+  -p "Explain recursion in simple terms:" \
+  -n 256
+
+# Interactive mode
+./build/bin/llama-cli \
+  -m models/llama-3-8b-Q4_K_M.gguf \
+  --interactive \
+  --color
+```
+
+## Key Parameters
+
+| Parameter | Meaning | Recommended |
+|---|---|---|
+| `-m` | Model file path | — |
+| `-ngl` | GPU offload layers (more = more GPU usage) | All layers (e.g., 33) |
+| `-c` | Context length | 4096–8192 |
+| `-t` | CPU thread count | Number of physical cores |
+| `--temp` | Temperature (higher = more random) | 0.7 (chat) / 0 (deterministic) |
+| `--top-p` | Nucleus sampling threshold | 0.9 |
+| `--repeat-penalty` | Repetition penalty | 1.1 |
+| `-n` | Max tokens to generate | 256–2048 |
+
+The most important parameter is `-ngl` (GPU layers). It determines how many model layers run on the GPU. Set to 999 to mean "use GPU as much as possible." If GPU memory isn't enough, llama.cpp automatically places remaining layers on CPU — this is **partial offload**.
+
+## llama-server: HTTP API Service
+
+```bash
+./build/bin/llama-server \
+  -m models/llama-3-8b-Q4_K_M.gguf \
+  -c 4096 \
+  -ngl 99 \
+  --host 0.0.0.0 \
+  --port 8080
+```
+
+Once running, you get an OpenAI-compatible HTTP API:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-3-8b",
+    "messages": [{"role":"user","content":"Hello!"}]
+  }'
+```
+
+llama-server also includes a built-in Web UI — open `http://localhost:8080` in your browser to chat directly.
+
+## llama.cpp vs Ollama
+
+| | llama.cpp | Ollama |
+|---|---|---|
+| Role | Low-level inference engine | User-friendly model management |
+| Setup difficulty | Manual configuration | Works out of the box |
+| Flexibility | Full control | Covers common scenarios |
+| Model management | Manual file downloads | Built-in model registry |
+| Parameter tuning | Fine-grained control | Common parameters exposed |
+| Performance | Same (Ollama uses llama.cpp) | Same |
+| Best for | Deep customization | Daily use, quick prototyping |
+
+In short: **use Ollama for daily work, use llama.cpp when you need deep control.**
+
+## Model Quantization
+
+If you have an FP16 model, you can quantize it yourself with llama.cpp:
+
+```bash
+# Convert Hugging Face model to GGUF
+python convert_hf_to_gguf.py /path/to/model --outfile model-f16.gguf
+
+# Quantize
+./build/bin/llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M
+```
+
+## The llama.cpp Ecosystem
+
+Although llama.cpp is written in C/C++, it has rich language bindings:
+
+- **llama-cpp-python**: Python bindings for direct use in Python
+- **node-llama-cpp**: Node.js bindings
+- **Ollama**: Essentially a Go wrapper around llama.cpp
+- **LM Studio**: Desktop GUI application built on llama.cpp
+
+## Key Takeaways
+
+1. **llama.cpp is the foundation of local LLM inference** — Ollama, LM Studio, and other tools all use it under the hood.
+2. **`-ngl` is the most critical parameter** — it determines GPU usage proportion and directly affects inference speed.
+3. **llama-server provides an OpenAI-compatible API** — lighter than Ollama, ideal for fine-grained control.
+4. **Use Ollama for daily work, llama.cpp for deep customization.** Performance is identical; the choice depends on how much control you need.

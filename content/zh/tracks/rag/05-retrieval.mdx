@@ -1,0 +1,194 @@
+---
+title: "检索策略"
+order: 5
+tags: ["rag", "retrieval", "search"]
+---
+
+## 检索决定 RAG 的上限
+
+RAG 的效果有一个铁律：**如果检索阶段没找到正确的信息，LLM 再强也没法给出正确答案。**
+
+生成模型的能力已经很强了，RAG 系统的瓶颈往往在检索。这一章讲几种提升检索效果的策略。
+
+## 基础向量搜索
+
+最基本的检索：把查询转为向量，在向量库中找最相似的 Top-K。
+
+```python
+query_embedding = embed("如何申请退款？")
+results = vector_db.search(query_embedding, top_k=5)
+```
+
+这能处理大部分场景，但有局限：
+
+- **同义词问题**：用户说"退货"，文档写的是"退款"，向量搜索通常能处理，但精确关键词匹配做不到
+- **关键词依赖**：用户搜"Python 3.12 新特性"，可能更需要精确的关键词匹配而不是语义匹配
+
+## 混合搜索（Hybrid Search）
+
+**混合搜索 = 向量搜索 + 关键词搜索**，取两者的优势：
+
+```python
+# 向量搜索：语义相似
+vector_results = vector_db.search(query_embedding, top_k=10)
+
+# 关键词搜索：精确匹配（BM25）
+keyword_results = bm25_search(query, top_k=10)
+
+# 合并结果（Reciprocal Rank Fusion）
+final_results = rrf_merge(vector_results, keyword_results, top_k=5)
+```
+
+**RRF（Reciprocal Rank Fusion）** 是最常用的结果合并算法：
+
+```python
+def rrf_merge(result_lists, k=60):
+    scores = {}
+    for result_list in result_lists:
+        for rank, doc in enumerate(result_list):
+            scores[doc.id] = scores.get(doc.id, 0) + 1 / (k + rank + 1)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+```
+
+混合搜索在大多数 RAG 场景中都比纯向量搜索效果好。很多向量数据库（Weaviate、Qdrant）已经内置了混合搜索功能。
+
+## 重排序（Re-ranking）
+
+检索通常分两阶段：
+
+1. **初筛（Retrieval）**：用向量/关键词搜索快速找出候选文档（Top-20 到 Top-100）
+2. **精排（Re-ranking）**：用更精确的模型对候选文档重新打分排序
+
+重排序模型（Cross-Encoder）比 Embedding 模型更准确，因为它**同时看查询和文档**，而不是分别编码再比较。
+
+```python
+from sentence_transformers import CrossEncoder
+
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+# 初筛：向量搜索得到 20 个候选
+candidates = vector_db.search(query_embedding, top_k=20)
+
+# 精排：用 Cross-Encoder 重排
+pairs = [(query, doc.text) for doc in candidates]
+scores = reranker.predict(pairs)
+
+# 按新分数排序，取 Top-5
+reranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)[:5]
+```
+
+也可以使用 API 服务：
+
+```python
+# Cohere Rerank API
+import cohere
+co = cohere.Client("your-api-key")
+
+results = co.rerank(
+    query="如何申请退款",
+    documents=[doc.text for doc in candidates],
+    top_n=5
+)
+```
+
+## 多查询检索（Multi-Query）
+
+用户的查询可能不够精确，或者只从一个角度描述了需求。**多查询检索**让 LLM 生成多个变体查询，扩大搜索范围：
+
+```python
+# 让 LLM 生成查询变体
+prompt = f"""为以下用户问题生成 3 个不同角度的搜索查询：
+
+用户问题：{query}
+
+输出 3 个查询，每行一个："""
+
+queries = llm.generate(prompt).split("\n")
+# 结果可能是：
+# "退款流程步骤"
+# "退货退款政策规定"
+# "申请退款需要什么条件"
+
+# 对每个查询分别检索
+all_results = []
+for q in queries:
+    results = vector_db.search(embed(q), top_k=5)
+    all_results.extend(results)
+
+# 去重并合并
+final_results = deduplicate(all_results)
+```
+
+## HyDE（Hypothetical Document Embeddings）
+
+一个巧妙的技巧：**让 LLM 先生成一个假设的答案，用这个答案的向量去搜索，而不是用问题的向量。**
+
+原理是：答案和文档的语义比问题和文档更接近。
+
+```python
+# 生成假设答案
+hypothetical_answer = llm.generate(
+    f"请简要回答：{query}\n（不需要准确，只是为了搜索用）"
+)
+
+# 用假设答案的向量搜索
+hyde_embedding = embed(hypothetical_answer)
+results = vector_db.search(hyde_embedding, top_k=5)
+```
+
+HyDE 在某些场景下效果显著，但也会增加延迟（多一次 LLM 调用）。
+
+## 元数据过滤
+
+在向量搜索之前或之后，用元数据缩小范围：
+
+```python
+# 时间过滤：只搜最近更新的文档
+results = vector_db.search(
+    query_embedding,
+    top_k=5,
+    filter={"updated_at": {"$gte": "2024-01-01"}}
+)
+
+# 分类过滤：只在特定分类中搜索
+results = vector_db.search(
+    query_embedding,
+    top_k=5,
+    filter={"category": "退款政策"}
+)
+```
+
+## 评估检索效果
+
+怎么知道你的检索做得好不好？几个常用指标：
+
+**Recall@K**：前 K 个结果中包含了多少相关文档（占所有相关文档的比例）。
+
+**Precision@K**：前 K 个结果中有多少是相关的。
+
+**MRR（Mean Reciprocal Rank）**：第一个相关文档出现在第几位（排名的倒数的平均值）。
+
+```python
+# 简单的评估框架
+test_cases = [
+    {"query": "退款政策", "expected_docs": ["policy-001", "policy-002"]},
+    {"query": "联系客服", "expected_docs": ["faq-005"]},
+]
+
+for case in test_cases:
+    results = retrieve(case["query"], top_k=5)
+    result_ids = [r.id for r in results]
+
+    recall = len(set(result_ids) & set(case["expected_docs"])) / len(case["expected_docs"])
+    print(f"Query: {case['query']}, Recall@5: {recall}")
+```
+
+**建议：在优化检索策略之前，先建立一个评估集。** 否则你不知道改动是变好了还是变差了。
+
+## 要点总结
+
+1. **检索质量决定 RAG 的上限。** 如果检索没找到正确信息，LLM 也无法给出好答案。
+2. **混合搜索（向量 + 关键词）通常优于纯向量搜索。** 对大多数场景推荐使用。
+3. **重排序（Re-ranking）是提升检索精度最有效的手段之一**——用 Cross-Encoder 对候选结果精排。
+4. **多查询和 HyDE 能扩大搜索范围**，但增加延迟。适合对质量要求高的场景。
+5. **先建评估集，再优化。** 没有评估，优化就是盲目的。

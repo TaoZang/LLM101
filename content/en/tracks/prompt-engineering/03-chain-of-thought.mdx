@@ -1,0 +1,160 @@
+---
+title: "Chain of Thought Prompting"
+order: 3
+tags: ["prompt", "cot", "reasoning"]
+---
+
+## Make the Model "Show Its Work"
+
+In school math exams, teachers always said "show your steps." Not just for grading — writing steps helps you think clearly and catch careless mistakes.
+
+LLMs are the same. If you ask for a direct answer, the model may skip critical reasoning steps and make surprisingly silly errors. But if you ask it to **think step by step**, accuracy improves significantly.
+
+This is **Chain of Thought (CoT)** prompting.
+
+## Direct Answer vs CoT
+
+Consider this example:
+
+**Direct answer:**
+
+```
+Q: A store has 23 apples. They use 20 to make juice
+and buy 6 more. How many apples are left?
+
+A: 9 apples
+```
+
+Sometimes the model gets it right (9), sometimes it doesn't.
+
+**With CoT:**
+
+```
+Q: A store has 23 apples. They use 20 to make juice
+and buy 6 more. How many apples are left? Think step by step.
+
+A: Let me calculate step by step:
+1. Started with 23 apples
+2. Used 20: 23 - 20 = 3
+3. Bought 6 more: 3 + 6 = 9
+So there are 9 apples left.
+```
+
+The difference? **The model explicitly writes out intermediate steps.** This isn't just for your verification — as it generates each step, it uses previous steps as context, reducing error probability.
+
+## Zero-shot CoT: The "Magic Phrase"
+
+The simplest CoT method — just append one phrase to your prompt:
+
+```
+Let's think step by step.
+```
+
+That's it. This phrase "triggers" the model into step-by-step reasoning mode, significantly improving accuracy on many tasks.
+
+This is called **Zero-shot CoT** — no examples needed, just an incantation.
+
+## Manual CoT: Hand-Written Reasoning Examples
+
+For more control, **manually provide reasoning process examples**:
+
+```
+Q: A parking lot has 3 cars. 2 more arrive. How many cars are there?
+A: The lot starts with 3 cars. 2 more arrive. 3 + 2 = 5. The answer is 5.
+
+Q: A cafeteria has 7 apples. 2 are used for lunch, 3 more are bought. How many now?
+A: Started with 7 apples. Used 2: 7 - 2 = 5. Bought 3: 5 + 3 = 8. The answer is 8.
+
+Q: A store has 23 apples. They use 20 to make juice and buy 6 more. How many are left?
+A:
+```
+
+Through examples, you tell the model not just "use steps" but also **what format, how detailed, and how to organize the reasoning**.
+
+## CoT for Programming Tasks
+
+CoT is especially useful for developers, since many programming tasks require multi-step reasoning:
+
+### Debugging
+
+```
+This code has a bug. Analyze step by step:
+1. First, understand the code's intent
+2. Trace execution line by line
+3. Identify the logic error
+4. Provide a fix
+
+```python
+def find_duplicates(lst):
+    seen = set()
+    duplicates = set()
+    for item in lst:
+        if item in seen:
+            duplicates.add(item)
+    return list(duplicates)
+```
+```
+
+### System Design
+
+```
+Help me design a URL shortener service. Think step by step:
+1. Requirements analysis: what are the core features
+2. Data model design
+3. API design
+4. Key technical decisions (short code algorithm, storage, etc.)
+5. Scalability considerations
+```
+
+## When CoT Helps
+
+CoT's effectiveness depends on task type:
+
+**Significantly helps:**
+- Math and logical reasoning
+- Multi-step problem solving
+- Code debugging and analysis
+- Decisions weighing multiple factors
+
+**Minimal effect:**
+- Simple factual Q&A ("What's the capital of France?")
+- Text generation and creative writing
+- Simple classification like sentiment analysis
+- Translation
+
+**Rule of thumb: if a human would need to "think about it" before answering, CoT helps. If you can answer instantly, CoT is unnecessary.**
+
+## Self-Consistency
+
+An enhancement to CoT: **have the model answer the same question multiple times with CoT, then pick the most common answer.**
+
+```
+Same question, temperature=0.7, run 5 times:
+Path 1 → Answer A
+Path 2 → Answer A
+Path 3 → Answer B
+Path 4 → Answer A
+Path 5 → Answer A
+
+Final answer: A (4/5 votes)
+```
+
+Different reasoning paths may reach different answers, but the correct one typically appears most frequently. This is called **Self-Consistency** — a classic CoT upgrade.
+
+The cost: token usage doubles (or more), suitable for scenarios demanding high accuracy.
+
+## CoT Limitations
+
+**Increased token usage**: Reasoning steps are tokens too, increasing both cost and latency.
+
+**Not a silver bullet**: For small models (<7B), CoT may not help and can even cause the model to "overthink" and make errors. CoT works best with strong models.
+
+**May generate fake reasoning**: The model might write plausible-looking but actually incorrect reasoning steps — it's "performing" reasoning, not truly doing logical deduction.
+
+## Key Takeaways
+
+1. **CoT makes models explicitly write reasoning steps**, reducing the chance of errors from skipping steps. Significantly helps reasoning tasks.
+2. **Simplest method: add "Let's think step by step."** This single phrase activates CoT mode.
+3. **Manual CoT gives more control** — use examples to teach the model your expected reasoning format and granularity.
+4. **CoT suits tasks that require "thinking"** — math, logic, debugging, design. Not needed for simple tasks.
+5. **Self-Consistency upgrades CoT** — multiple reasoning runs with voting improves accuracy, but increases cost.

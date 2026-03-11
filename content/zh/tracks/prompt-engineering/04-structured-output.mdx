@@ -1,0 +1,189 @@
+---
+title: "获取结构化输出"
+order: 4
+tags: ["prompt", "json", "structured-output"]
+---
+
+## 为什么开发者需要结构化输出
+
+LLM 默认输出自然语言——一段段的文字。但作为开发者，你通常需要的是**程序能解析的数据**：JSON、XML、或特定格式的文本。
+
+```
+❌ 模型回答："根据分析，这段代码有三个问题。第一个是..."
+✅ 模型回答：{"issues": [{"line": 15, "severity": "high", "message": "..."}]}
+```
+
+第一种你需要自己解析自然语言（痛苦且不可靠），第二种直接 `JSON.parse()` 就能用。
+
+## 在 Prompt 中指定 JSON 格式
+
+最基础的方式：在 Prompt 中明确告诉模型你要 JSON。
+
+```
+分析以下代码的问题，以 JSON 格式输出。
+
+格式要求：
+{
+  "issues": [
+    {
+      "line": <行号>,
+      "severity": "high" | "medium" | "low",
+      "description": "<问题描述>",
+      "fix": "<修复建议>"
+    }
+  ],
+  "summary": "<总结>"
+}
+
+代码：
+```python
+def divide(a, b):
+    return a / b
+```
+```
+
+关键技巧：
+1. **给出完整的 JSON schema 示例**——不要只说"输出 JSON"，要展示具体结构
+2. **使用占位符说明每个字段**——`<行号>` 比直接写个数字更清晰
+3. **限定枚举值**——`"high" | "medium" | "low"` 比"严重程度"更精确
+
+## API 级别的 JSON Mode
+
+主流 API 都提供了原生的 JSON 模式，比 Prompt 层面的要求更可靠：
+
+### OpenAI
+
+```python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    response_format={"type": "json_object"},
+    messages=[
+        {"role": "system", "content": "你是一个输出 JSON 的助手。"},
+        {"role": "user", "content": "分析这段代码..."}
+    ]
+)
+```
+
+### Claude
+
+```python
+response = client.messages.create(
+    model="claude-sonnet-4-6",
+    messages=[...],
+    # Claude 通过 tool_use 或 prompt 指导实现结构化输出
+)
+```
+
+### Ollama（本地模型）
+
+```python
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    response_format={"type": "json_object"},
+    messages=[...]
+)
+```
+
+使用 JSON Mode 时，模型保证输出有效的 JSON。但 **JSON Mode 不保证 schema 正确**——它只保证语法有效，不保证字段和结构符合你的要求。所以你仍然需要在 Prompt 中指定 schema。
+
+## 用 XML 作为输出格式
+
+对于某些场景，XML 或类 XML 标签比 JSON 更实用：
+
+```
+请分析以下文本，用标签标注实体：
+
+文本：张三在北京的字节跳动工作。
+
+<analysis>
+  <person>张三</person>
+  <location>北京</location>
+  <organization>字节跳动</organization>
+</analysis>
+```
+
+XML 风格的优点：
+- 标签名本身就是语义，更直观
+- 嵌套内容可读性好
+- Claude 等模型对 XML 标签有很好的理解
+
+## Tool Use / Function Calling
+
+最可靠的结构化输出方式是 **Tool Use**（工具调用）。你定义一个函数的参数 schema，模型的输出会严格遵循这个 schema：
+
+```python
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "report_code_issues",
+        "description": "报告代码中发现的问题",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "line": {"type": "integer"},
+                            "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                            "description": {"type": "string"}
+                        },
+                        "required": ["line", "severity", "description"]
+                    }
+                }
+            },
+            "required": ["issues"]
+        }
+    }
+}]
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "分析这段代码..."}],
+    tools=tools,
+    tool_choice={"type": "function", "function": {"name": "report_code_issues"}}
+)
+```
+
+Tool Use 的优势：
+- **Schema 验证**：输出严格符合你定义的类型和结构
+- **枚举约束**：`enum` 字段限制了可选值
+- **必填字段**：`required` 保证关键字段不会缺失
+
+## Markdown 作为轻量级结构
+
+不需要程序解析时，Markdown 是很好的"半结构化"格式：
+
+```
+请以如下 Markdown 格式输出分析结果：
+
+## 概述
+（一句话总结）
+
+## 发现的问题
+| # | 严重程度 | 描述 | 建议 |
+|---|---|---|---|
+| 1 | ... | ... | ... |
+
+## 下一步行动
+- [ ] 行动项 1
+- [ ] 行动项 2
+```
+
+Markdown 表格和列表既方便人阅读，也相对容易用正则解析。
+
+## 提高结构化输出可靠性的技巧
+
+1. **给完整示例**：不要只描述格式，给一个完整的输出示例
+2. **在 System Prompt 中强调**：`"你必须只输出 JSON，不要包含其他文字"`
+3. **使用 temperature=0**：减少随机性，提高格式一致性
+4. **后处理**：即使用了 JSON Mode，代码中也应该有错误处理——`try/catch` 解析失败的情况
+5. **schema 验证**：用 Zod（TypeScript）或 Pydantic（Python）验证输出是否符合预期
+
+## 要点总结
+
+1. **结构化输出是 LLM 集成到应用的关键。** 自然语言回复对程序没用，你需要 JSON、XML 或其他可解析的格式。
+2. **三种方式按可靠性排序：Tool Use > JSON Mode > Prompt 指令。** 优先使用 Tool Use。
+3. **总是在 Prompt 中给出完整的 schema 和示例**——即使使用了 JSON Mode。
+4. **加上错误处理。** 结构化输出不是 100% 可靠的，代码中要有解析失败的 fallback。

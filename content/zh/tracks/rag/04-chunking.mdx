@@ -1,0 +1,203 @@
+---
+title: "文档分块策略"
+order: 4
+tags: ["rag", "chunking", "preprocessing"]
+---
+
+## 为什么要分块
+
+你不能把整篇文档直接转成一个向量。原因有两个：
+
+**Embedding 模型有长度限制**：大多数模型只支持 512-8192 tokens 的输入。一篇长文档会被截断，丢失后半部分的信息。
+
+**检索精度**：向量代表的是文本的整体语义。一篇 10 页的文档包含很多主题，它的向量是所有主题的"平均"——搜索任何一个具体问题都不会特别匹配。把文档切成小块，每块聚焦一个主题，搜索就更精准。
+
+**分块（Chunking）** 就是把长文档切成适合 Embedding 和检索的小段。
+
+## 固定大小分块
+
+最简单的方式：按固定字符数或 token 数切割。
+
+```python
+def fixed_size_chunk(text, chunk_size=500, overlap=50):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - overlap  # 重叠部分
+    return chunks
+```
+
+**重叠（Overlap）** 是关键。如果完全不重叠，一句话可能被从中间切断：
+
+```
+无重叠：
+块 1: "...退款审核周期为"
+块 2: "3-5 个工作日..."
+
+有重叠：
+块 1: "...退款审核周期为 3-5 个工作日。"
+块 2: "退款审核周期为 3-5 个工作日。退款..."
+```
+
+重叠确保了信息不会在切割边界丢失。
+
+优点：简单、可预测、速度快。
+缺点：不考虑语义边界，可能在段落或句子中间切断。
+
+## 按分隔符分块
+
+更智能一些：在自然的语义边界处切割。
+
+```python
+def split_by_separators(text, separators=["\n\n", "\n", ". ", " "]):
+    """递归分割：先尝试大分隔符，太大了再用小分隔符"""
+    chunks = []
+    for sep in separators:
+        if sep in text:
+            parts = text.split(sep)
+            for part in parts:
+                if len(part) <= chunk_size:
+                    chunks.append(part)
+                else:
+                    # 这块太大，用下一级分隔符继续分
+                    chunks.extend(split_by_separators(part, separators[1:]))
+            return chunks
+    # 所有分隔符都试过了，强制按大小切
+    return fixed_size_chunk(text)
+```
+
+优先级：段落分隔（`\n\n`） → 换行（`\n`） → 句号 → 空格。尽量保持完整的段落和句子。
+
+这就是 LangChain 的 `RecursiveCharacterTextSplitter` 的核心思路。
+
+## 语义分块
+
+最智能的方式：用 Embedding 判断哪里该切。
+
+原理：
+1. 把文档按句子切开
+2. 计算相邻句子的 Embedding 相似度
+3. 当相似度突然下降时（说明话题变了），在那里切分
+
+```python
+def semantic_chunk(sentences, threshold=0.5):
+    chunks = []
+    current_chunk = [sentences[0]]
+
+    for i in range(1, len(sentences)):
+        sim = cosine_similarity(
+            embed(sentences[i-1]),
+            embed(sentences[i])
+        )
+        if sim < threshold:
+            # 话题转换，开始新块
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentences[i]]
+        else:
+            current_chunk.append(sentences[i])
+
+    chunks.append(" ".join(current_chunk))
+    return chunks
+```
+
+优点：每块内容语义连贯。
+缺点：需要额外的 Embedding 计算，速度慢；阈值需要调整。
+
+## 特殊格式的分块
+
+### Markdown
+
+Markdown 有天然的结构——标题就是最好的分割点：
+
+```python
+def markdown_chunk(text):
+    """按标题分块"""
+    sections = re.split(r'\n(?=#{1,3} )', text)
+    chunks = []
+    for section in sections:
+        if len(section) > chunk_size:
+            # 章节太长，继续用段落分割
+            chunks.extend(split_by_paragraphs(section))
+        else:
+            chunks.append(section)
+    return chunks
+```
+
+### 代码
+
+代码按函数或类来分块，而不是按字符数：
+
+```python
+# 好的分块：完整的函数
+def calculate_tax(income):
+    if income <= 36000:
+        return income * 0.03
+    elif income <= 144000:
+        return income * 0.1 - 2520
+    ...
+
+# 坏的分块：函数被从中间切断
+def calculate_tax(income):
+    if income <= 36000:
+        return income * 0.03
+# --- 这里被切断了 ---
+    elif income <= 144000:
+        return income * 0.1 - 2520
+```
+
+## 块大小的选择
+
+| 块大小 | 优点 | 缺点 | 适用 |
+|---|---|---|---|
+| 小（100-200 tokens） | 检索精确 | 缺少上下文 | 精确问答 |
+| 中（300-500 tokens） | 平衡 | — | 通用场景 |
+| 大（500-1000 tokens） | 上下文丰富 | 检索可能不精确 | 总结、分析 |
+
+**推荐从 300-500 tokens 开始**，根据实际效果调整。
+
+## 增强分块效果的技巧
+
+### 1. 保留元数据
+
+```python
+chunk = {
+    "text": "退款审核周期为 3-5 个工作日...",
+    "metadata": {
+        "source": "退款政策.md",
+        "section": "审核流程",
+        "page": 3
+    }
+}
+```
+
+元数据不进入 Embedding，但在搜索结果中非常有用（筛选、展示来源）。
+
+### 2. 添加上下文前缀
+
+在每个块前面加上它所属的章节标题：
+
+```
+原始块："审核周期为 3-5 个工作日。"
+增强块："退款政策 > 审核流程：审核周期为 3-5 个工作日。"
+```
+
+这帮助 Embedding 模型理解块的上下文，提高检索精度。
+
+### 3. 小块检索，大块返回
+
+一种高级策略：用小块做检索（更精准），但返回给 LLM 时用包含它的大块（更多上下文）。
+
+```
+索引：小块（200 tokens）→ 用于向量搜索
+返回：大块（800 tokens）→ 包含小块及其上下文
+```
+
+## 要点总结
+
+1. **分块是 RAG 效果的关键因素。** 块太大检索不精准，块太小缺少上下文。
+2. **从递归字符分割开始**（按段落 → 句子 → 字符），这是最实用的通用方案。
+3. **重叠很重要**——10-20% 的重叠能避免信息在边界处丢失。
+4. **块大小推荐 300-500 tokens 作为起点**，根据任务调整。
+5. **保留元数据和添加上下文前缀**能显著提高检索效果。

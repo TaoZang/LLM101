@@ -1,0 +1,209 @@
+---
+title: "Getting Started with Ollama"
+order: 3
+tags: ["local", "ollama", "hands-on"]
+---
+
+## One Command to Run a Model
+
+Ollama is the simplest way to run LLMs locally. If you've used Docker, think of Ollama as "Docker for LLMs" — it handles model downloading, quantization, and runtime, letting you run a model with a single command.
+
+```bash
+ollama run llama3.2
+```
+
+That's it. The first run downloads the model automatically, then you can start chatting.
+
+## Installation
+
+**macOS**:
+```bash
+brew install ollama
+```
+
+**Linux**:
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows**: Download the installer from [ollama.com](https://ollama.com).
+
+After installation, Ollama runs as a background service on `localhost:11434`.
+
+## Core Commands
+
+### Running Models
+
+```bash
+# Run a model (downloads if not present)
+ollama run llama3.2
+
+# Run a specific size
+ollama run llama3.2:3b
+ollama run llama3.2:1b
+
+# Run a specific quantization
+ollama run llama3.2:3b-q4_K_M
+```
+
+### Managing Models
+
+```bash
+# List downloaded models
+ollama list
+
+# Download a model (without running)
+ollama pull qwen2.5:7b
+
+# Delete a model
+ollama rm llama3.2:3b
+
+# Show model details
+ollama show llama3.2
+```
+
+### Checking Status
+
+```bash
+# See running models
+ollama ps
+
+# View Ollama logs
+ollama logs
+```
+
+## Choosing a Model
+
+Ollama's library has hundreds of models. For developers, start with these:
+
+| Model | Size | Strengths |
+|---|---|---|
+| `llama3.2:3b` | ~2 GB | Light and fast, good for casual chat |
+| `llama3.1:8b` | ~4.7 GB | Well-balanced, most popular size |
+| `qwen2.5:7b` | ~4.4 GB | Strong multilingual capabilities |
+| `deepseek-coder-v2:16b` | ~8.9 GB | Strong coding ability |
+| `mistral:7b` | ~4.1 GB | Efficient general-purpose model |
+| `nomic-embed-text` | ~274 MB | Text embedding model for RAG |
+
+## Custom Modelfiles
+
+A Modelfile is Ollama's configuration file for customizing model behavior. The syntax is similar to a Dockerfile:
+
+```dockerfile
+# Base model
+FROM llama3.1:8b
+
+# Set system prompt
+SYSTEM """You are a professional code review assistant. You will:
+1. Point out potential issues in the code
+2. Give specific improvement suggestions
+3. Be concise and direct"""
+
+# Adjust parameters
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER num_ctx 8192
+```
+
+Create a custom model from the Modelfile:
+
+```bash
+ollama create code-reviewer -f Modelfile
+ollama run code-reviewer
+```
+
+Now you have a dedicated code review model that always uses your system prompt and parameters.
+
+## API Usage
+
+Ollama exposes a REST API compatible with OpenAI's format. This means you can use any OpenAI SDK to connect to Ollama directly.
+
+### Direct Calls
+
+```bash
+# Chat endpoint
+curl http://localhost:11434/api/chat -d '{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "user", "content": "Write a quicksort in Python"}
+  ]
+}'
+
+# Generate endpoint (non-chat)
+curl http://localhost:11434/api/generate -d '{
+  "model": "llama3.1:8b",
+  "prompt": "Explain what recursion is"
+}'
+```
+
+### OpenAI-Compatible Endpoint
+
+```bash
+curl http://localhost:11434/v1/chat/completions -d '{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "user", "content": "Hello!"}
+  ]
+}'
+```
+
+### Using in Code
+
+Python (with OpenAI SDK):
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"  # Ollama doesn't need a key, any value works
+)
+
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+
+JavaScript/TypeScript:
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:11434/v1',
+  apiKey: 'ollama',
+});
+
+const response = await client.chat.completions.create({
+  model: 'llama3.1:8b',
+  messages: [{ role: 'user', content: 'Hello!' }],
+});
+console.log(response.choices[0].message.content);
+```
+
+This compatibility is crucial — you can use Ollama for local development and testing, then switch to OpenAI or Claude in production by just changing `base_url` and `api_key`.
+
+## Practical Tips
+
+**Set context length**: Default is 2048 tokens, not enough for many tasks. Adjust at runtime:
+
+```bash
+ollama run llama3.1:8b --num-ctx 8192
+```
+
+**GPU offloading**: Ollama automatically detects and uses GPUs. To force CPU-only:
+
+```bash
+OLLAMA_NUM_GPU=0 ollama run llama3.1:8b
+```
+
+**Concurrent requests**: Ollama supports handling multiple requests simultaneously, sharing GPU memory.
+
+## Key Takeaways
+
+1. **Ollama is the simplest path to local LLMs** — easy install, one command to run, zero configuration.
+2. **It's OpenAI API-compatible**, so you can use existing OpenAI SDKs directly, making it easy to switch between local and cloud.
+3. **Modelfiles let you customize model behavior** — set system prompts, tune parameters, create purpose-built models.
+4. **Start with `llama3.1:8b` or `qwen2.5:7b`** — these are the best general-purpose starting points.

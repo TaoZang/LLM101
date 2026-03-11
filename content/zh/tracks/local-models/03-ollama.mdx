@@ -1,0 +1,209 @@
+---
+title: "Ollama 快速上手"
+order: 3
+tags: ["local", "ollama", "hands-on"]
+---
+
+## 一条命令跑模型
+
+Ollama 是目前本地运行 LLM 最简单的方式。如果你用过 Docker，可以把 Ollama 理解为"LLM 的 Docker"——它封装了模型下载、量化、运行的所有细节，让你用一条命令就能跑起一个模型。
+
+```bash
+ollama run llama3.2
+```
+
+就这样。首次运行会自动下载模型，然后你就可以开始对话了。
+
+## 安装
+
+**macOS**：
+```bash
+brew install ollama
+```
+
+**Linux**：
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+**Windows**：从 [ollama.com](https://ollama.com) 下载安装包。
+
+安装后，Ollama 会以后台服务的形式运行，监听 `localhost:11434`。
+
+## 核心命令
+
+### 运行模型
+
+```bash
+# 运行模型（不存在则自动下载）
+ollama run llama3.2
+
+# 运行指定大小
+ollama run llama3.2:3b
+ollama run llama3.2:1b
+
+# 运行特定量化版本
+ollama run llama3.2:3b-q4_K_M
+```
+
+### 管理模型
+
+```bash
+# 列出已下载的模型
+ollama list
+
+# 下载模型（不运行）
+ollama pull qwen2.5:7b
+
+# 删除模型
+ollama rm llama3.2:3b
+
+# 查看模型详情
+ollama show llama3.2
+```
+
+### 查看运行状态
+
+```bash
+# 查看正在运行的模型
+ollama ps
+
+# 查看 Ollama 日志
+ollama logs
+```
+
+## 模型选择
+
+Ollama 的模型库里有几百个模型。对于开发者，推荐从这些开始：
+
+| 模型 | 大小 | 特点 |
+|---|---|---|
+| `llama3.2:3b` | ~2 GB | 轻量快速，日常对话够用 |
+| `llama3.1:8b` | ~4.7 GB | 能力平衡，最常用的尺寸 |
+| `qwen2.5:7b` | ~4.4 GB | 中文能力出色 |
+| `deepseek-coder-v2:16b` | ~8.9 GB | 编程能力强 |
+| `mistral:7b` | ~4.1 GB | 高效的通用模型 |
+| `nomic-embed-text` | ~274 MB | 文本嵌入模型，用于 RAG |
+
+## 自定义 Modelfile
+
+Modelfile 是 Ollama 的配置文件，让你自定义模型的行为。语法类似 Dockerfile：
+
+```dockerfile
+# 基础模型
+FROM llama3.1:8b
+
+# 设置系统提示词
+SYSTEM """你是一个专业的代码审查助手。你会：
+1. 指出代码中的潜在问题
+2. 给出具体的改进建议
+3. 用中文回答"""
+
+# 调整参数
+PARAMETER temperature 0.3
+PARAMETER top_p 0.9
+PARAMETER num_ctx 8192
+```
+
+使用 Modelfile 创建自定义模型：
+
+```bash
+ollama create code-reviewer -f Modelfile
+ollama run code-reviewer
+```
+
+这样你就有了一个专门用于代码审查的模型，每次运行都会带上你设置的系统提示词和参数。
+
+## API 调用
+
+Ollama 暴露了一个 REST API，兼容 OpenAI 的格式。这意味着你可以用任何 OpenAI SDK 直接连接 Ollama。
+
+### 直接调用
+
+```bash
+# 对话接口
+curl http://localhost:11434/api/chat -d '{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "user", "content": "用 Python 写一个快速排序"}
+  ]
+}'
+
+# 生成接口（非对话）
+curl http://localhost:11434/api/generate -d '{
+  "model": "llama3.1:8b",
+  "prompt": "解释什么是递归"
+}'
+```
+
+### OpenAI 兼容接口
+
+```bash
+curl http://localhost:11434/v1/chat/completions -d '{
+  "model": "llama3.1:8b",
+  "messages": [
+    {"role": "user", "content": "Hello!"}
+  ]
+}'
+```
+
+### 在代码中使用
+
+Python（用 OpenAI SDK）：
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"  # Ollama 不需要 key，随便填
+)
+
+response = client.chat.completions.create(
+    model="llama3.1:8b",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+print(response.choices[0].message.content)
+```
+
+JavaScript/TypeScript：
+
+```typescript
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  baseURL: 'http://localhost:11434/v1',
+  apiKey: 'ollama',
+});
+
+const response = await client.chat.completions.create({
+  model: 'llama3.1:8b',
+  messages: [{ role: 'user', content: 'Hello!' }],
+});
+console.log(response.choices[0].message.content);
+```
+
+这个兼容性非常重要——它意味着你可以在开发时用 Ollama 做本地测试，生产环境切换到 OpenAI 或 Claude，只需要改一下 `base_url` 和 `api_key`。
+
+## 实用技巧
+
+**设置上下文长度**：默认 2048 tokens，对很多任务不够。可以在运行时调整：
+
+```bash
+ollama run llama3.1:8b --num-ctx 8192
+```
+
+**GPU 卸载**：Ollama 会自动检测 GPU 并使用。如果你想强制 CPU 运行：
+
+```bash
+OLLAMA_NUM_GPU=0 ollama run llama3.1:8b
+```
+
+**并发请求**：Ollama 默认支持同时处理多个请求，但会共享显存。
+
+## 要点总结
+
+1. **Ollama 是本地 LLM 的最简方案**——安装简单，一条命令运行模型，零配置。
+2. **它兼容 OpenAI API 格式**，可以用现有的 OpenAI SDK 直接连接，方便在本地和云端之间切换。
+3. **Modelfile 让你定制模型行为**——设置系统提示词、调整参数，创建专用模型。
+4. **从 `llama3.1:8b` 或 `qwen2.5:7b` 开始**，这两个是最好的通用起点。

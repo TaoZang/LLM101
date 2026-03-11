@@ -1,0 +1,189 @@
+---
+title: "Few-Shot Learning"
+order: 2
+tags: ["prompt", "few-shot", "in-context-learning"]
+---
+
+## Show the Model a Few Examples
+
+Sometimes, no amount of describing your desired output format beats simply **showing the model a few examples**.
+
+This is **Few-shot Learning** — providing input-output examples in the prompt so the model "learns" the pattern you expect, then applies it to new inputs.
+
+## Zero-shot vs One-shot vs Few-shot
+
+### Zero-shot
+
+No examples, just ask directly:
+
+```
+Classify the sentiment of the following sentence as "positive" or "negative":
+
+"The food at this restaurant was really disappointing."
+```
+
+The model usually answers correctly, but the format may be inconsistent (sometimes "negative", sometimes "This is a negative sentiment").
+
+### One-shot
+
+One example:
+
+```
+Classify the sentiment as "positive" or "negative".
+
+Sentence: "The weather is beautiful today, I'm feeling great."
+Classification: positive
+
+Sentence: "The food at this restaurant was really disappointing."
+Classification:
+```
+
+### Few-shot
+
+Multiple examples:
+
+```
+Classify the sentiment as "positive" or "negative".
+
+Sentence: "The weather is beautiful today, I'm feeling great."
+Classification: positive
+
+Sentence: "The delivery is late again, so annoying."
+Classification: negative
+
+Sentence: "This book is brilliantly written, highly recommend."
+Classification: positive
+
+Sentence: "The food at this restaurant was really disappointing."
+Classification:
+```
+
+With multiple examples, the model more accurately understands:
+1. **What the task is** — sentiment classification
+2. **Output format** — only answer "positive" or "negative"
+3. **Decision criteria** — what counts as positive or negative
+
+## How to Choose Good Examples
+
+Example quality directly affects results. Key principles:
+
+### 1. Cover Different Cases
+
+```
+✅ Include both positive and negative examples
+✅ Include simple and complex cases
+✅ Include edge cases
+```
+
+If all your examples are positive, the model may lean toward classifying everything as positive.
+
+### 2. Examples Should Match Target Input
+
+If you're processing technical documents, examples should be technical documents too, not social media posts. Domain matching matters.
+
+### 3. Consistent Formatting
+
+All examples should follow identical formatting:
+
+```
+❌
+Input: apple → fruit
+Input: dog → this is an animal
+cat → animal
+
+✅
+Input: apple
+Category: fruit
+
+Input: dog
+Category: animal
+
+Input: cat
+Category:
+```
+
+### 4. More Isn't Always Better
+
+Usually 3–5 examples suffice. Too many examples:
+- Consume precious context window
+- Introduce noise
+- Increase token costs
+
+## Example Order Matters
+
+Research shows that the **ordering** of few-shot examples affects model output. Practical tips:
+
+- **Place the most relevant examples closest to the target input** (models are more sensitive to recent context)
+- **Diversify ordering** — don't group same-category examples together
+- If results are poor, **try shuffling the order** — sometimes that alone fixes things
+
+## Practical Applications
+
+### Data Transformation
+
+```
+Convert natural language dates to ISO format.
+
+Input: March 15th next year
+Output: 2027-03-15
+
+Input: Last day of last month
+Output: 2026-02-28
+
+Input: Next Wednesday
+Output:
+```
+
+### Code Style Conversion
+
+```
+Convert the following JavaScript to TypeScript with type annotations.
+
+JavaScript:
+function add(a, b) { return a + b; }
+
+TypeScript:
+function add(a: number, b: number): number { return a + b; }
+
+JavaScript:
+function greet(name) { return "Hello, " + name; }
+
+TypeScript:
+```
+
+### Text Extraction
+
+```
+Extract company name and funding amount from the text.
+
+Text: "ByteDance raised $5 billion in its latest funding round."
+Result: {"company": "ByteDance", "amount": "$5 billion"}
+
+Text: "SpaceX completed a new $2.1 billion funding round."
+Result: {"company": "SpaceX", "amount": "$2.1 billion"}
+
+Text: "Stripe announced a $6.5 billion strategic investment."
+Result:
+```
+
+## When Few-shot Helps Most
+
+Few-shot is especially useful for:
+
+1. **Specific output formats** — examples are more intuitive than descriptions
+2. **Classification tasks** — demonstrating each category
+3. **Data transformation** — input-to-output mapping patterns
+4. **Tasks the model struggles with** — use examples to "teach" the model your intent
+
+## When NOT to Use Few-shot
+
+- **The task description is already clear enough** — if the model performs well without examples, adding them just wastes tokens
+- **Each example is very long** — quickly fills the context window
+- **The task is too complex and requires reasoning** — Chain of Thought (next chapter) is more appropriate
+
+## Key Takeaways
+
+1. **Few-shot = showing the model examples in the prompt.** It's one of the most intuitive and effective ways to convey your intent.
+2. **Example quality > quantity.** 3–5 high-quality, diverse, consistently formatted examples usually suffice.
+3. **Example order affects results.** Place the most relevant examples closest to the target input.
+4. **Few-shot works best for formatted output, classification, and data transformation.** For complex reasoning tasks, consider Chain of Thought.

@@ -1,0 +1,219 @@
+---
+title: "Building a Complete RAG Pipeline"
+order: 6
+tags: ["rag", "pipeline", "hands-on"]
+---
+
+## Putting It All Together
+
+Previous chapters covered embeddings, vector databases, chunking, and retrieval separately. Now let's combine them into a complete RAG system.
+
+## Overall Architecture
+
+A RAG system has two pipelines:
+
+### Offline: Document Ingestion Pipeline
+
+```
+Raw documents → Parse → Chunk → Embed → Store in vector database
+```
+
+This runs during data preparation, before any user queries.
+
+### Online: Query Pipeline
+
+```
+User question → Embed → Retrieve → Re-rank → Build prompt → LLM generate → Answer
+```
+
+This runs in real-time when users ask questions.
+
+## Complete Code Example
+
+A full RAG system in Python using Chroma + OpenAI:
+
+### Document Ingestion
+
+```python
+import chromadb
+from openai import OpenAI
+import os
+
+client = OpenAI()
+chroma = chromadb.PersistentClient(path="./chroma_db")
+collection = chroma.get_or_create_collection("knowledge_base")
+
+def load_and_chunk(file_path, chunk_size=500, overlap=50):
+    with open(file_path, "r") as f:
+        text = f.read()
+
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append({
+            "text": text[start:end],
+            "source": os.path.basename(file_path),
+        })
+        start = end - overlap
+    return chunks
+
+def embed_text(text):
+    response = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    )
+    return response.data[0].embedding
+
+def ingest(directory):
+    for filename in os.listdir(directory):
+        if not filename.endswith(".md"):
+            continue
+        filepath = os.path.join(directory, filename)
+        chunks = load_and_chunk(filepath)
+
+        for i, chunk in enumerate(chunks):
+            doc_id = f"{filename}_{i}"
+            collection.add(
+                ids=[doc_id],
+                documents=[chunk["text"]],
+                embeddings=[embed_text(chunk["text"])],
+                metadatas=[{"source": chunk["source"]}]
+            )
+
+    print(f"Ingested {collection.count()} document chunks")
+
+ingest("./knowledge_base/")
+```
+
+### Query and Generation
+
+```python
+def retrieve(query, top_k=5):
+    query_embedding = embed_text(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k
+    )
+    return results
+
+def build_prompt(query, context_docs):
+    context = "\n\n---\n\n".join(context_docs)
+
+    return f"""Answer the user's question based on the references below.
+
+Rules:
+1. Only use information from the references to answer
+2. If the references don't contain relevant info, say "Based on available information, I cannot answer this question"
+3. Cite your sources
+
+References:
+{context}
+
+Question: {query}"""
+
+def ask(query):
+    # 1. Retrieve
+    results = retrieve(query)
+    docs = results["documents"][0]
+    sources = results["metadatas"][0]
+
+    # 2. Build prompt
+    prompt = build_prompt(query, docs)
+
+    # 3. Generate
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You answer questions based on a knowledge base."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3
+    )
+
+    answer = response.choices[0].message.content
+
+    # 4. Attach sources
+    source_list = list(set(s["source"] for s in sources))
+    return f"{answer}\n\nSources: {', '.join(source_list)}"
+
+print(ask("How long does a refund take?"))
+```
+
+## RAG Prompt Design
+
+The prompt is an often-overlooked but critical part of RAG.
+
+### Handle "No Information Found"
+
+```
+If the references don't contain enough information to answer the question,
+say "Based on available information, I cannot determine this" — do not make up an answer.
+```
+
+Without this instruction, the model may ignore references and answer from its own knowledge — defeating the purpose of RAG.
+
+### Cite Sources
+
+```
+After each key piece of information, cite the source: [Source: filename]
+```
+
+This lets users verify answer accuracy.
+
+### Handle Contradictory Information
+
+```
+If different references contradict each other, point out the contradiction
+and present each source's claim, letting the user decide.
+```
+
+## Common Issues and Debugging
+
+### Issue 1: Retrieved Irrelevant Documents
+
+Possible causes: chunks too large (multiple topics per chunk), wrong embedding model, missing metadata filters.
+
+Fix: reduce chunk size, try different embedding model, add metadata filtering.
+
+### Issue 2: Answer Ignores References
+
+Possible causes: prompt doesn't emphasize "only use references", retrieved docs have low relevance, model prefers its own knowledge.
+
+Fix: strengthen "only use references" in the prompt, improve retrieval quality.
+
+### Issue 3: Answer Too Generic
+
+Possible causes: retrieved chunks lack detail, chunks too small (insufficient context).
+
+Fix: increase chunk size or use "small-to-big" retrieval strategy.
+
+### Issue 4: High Latency
+
+RAG latency = embedding time + retrieval time + LLM generation time.
+
+Optimization directions:
+- Use a smaller embedding model
+- Reduce Top-K
+- Use streaming output to improve perceived speed
+- Cache results for popular queries
+
+## Framework Choices
+
+You can build from scratch as above, or use established frameworks:
+
+| Framework | Notes |
+|---|---|
+| **LangChain** | Largest ecosystem, rich components, steeper learning curve |
+| **LlamaIndex** | RAG-focused, rich data connectors |
+| **Haystack** | Production-grade, clean pipeline design |
+| **Build your own** | Most flexible, full control, best for simple scenarios or deep customization |
+
+**Recommendation: implement a minimal RAG yourself first to understand the principles, then decide whether to adopt a framework.** In many cases, a custom implementation of a few dozen lines is more appropriate than pulling in a large framework.
+
+## Key Takeaways
+
+1. **RAG = offline ingestion + online query pipelines.** Ingestion processes documents, query serves users.
+2. **Prompt design is critical to RAG quality.** Explicitly require the model to "only answer from references" and handle "no info found" gracefully.
+3. **Start simple, optimize as needed.** Get the basic flow working, then address specific issues (poor retrieval, generic answers, etc.).
+4. **Build it yourself first, then consider frameworks.** Understanding the principles matters more than learning framework APIs.

@@ -1,0 +1,209 @@
+---
+title: "Evaluation and Benchmarking"
+order: 5
+tags: ["fine-tuning", "evaluation", "metrics"]
+---
+
+## Why Evaluation Is Hard
+
+Traditional ML evaluation is straightforward — accuracy, F1, AUC all have clear definitions. But for generative models, "a good answer" is subjective.
+
+The same question may have countless "correct" answers. Evaluation isn't about "right or wrong" but "good or not."
+
+## Automated Metrics
+
+### Perplexity
+
+How "surprised" the model is by test data. Lower is better.
+
+```python
+import math
+
+eval_results = trainer.evaluate()
+perplexity = math.exp(eval_results["eval_loss"])
+print(f"Perplexity: {perplexity}")
+```
+
+Limitation: measures token prediction ability, not answer quality. Low perplexity doesn't necessarily mean good answers.
+
+### BLEU and ROUGE
+
+These measure overlap between generated and reference text:
+
+- **BLEU**: How many n-grams in the generated text appear in the reference
+- **ROUGE**: How many n-grams in the reference appear in the generated text
+
+```python
+from rouge_score import rouge_scorer
+
+scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
+scores = scorer.score(
+    "Model generated answer here",
+    "Reference answer here"
+)
+```
+
+**Major limitation**: These only check word overlap, not semantics. "The cat sat on the mat" and "A feline rested on the rug" mean the same thing but score poorly.
+
+**Bottom line: BLEU and ROUGE are largely useless for LLM evaluation. Know them but don't rely on them.**
+
+## LLM-as-Judge
+
+Use a strong model to evaluate your fine-tuned model's output:
+
+```python
+judge_prompt = """Rate the quality of this AI response from 1-5.
+
+Dimensions:
+- Accuracy: Is the information correct?
+- Relevance: Does it answer the user's question?
+- Completeness: Does it cover key points?
+- Language quality: Is it clear and fluent?
+
+User question: {question}
+AI response: {response}
+
+Provide a score (1-5) and brief reason. Output JSON:
+{{"score": <score>, "reason": "<reason>"}}"""
+
+def evaluate_with_llm(question, response, judge_model="gpt-4o"):
+    result = llm.generate(
+        judge_prompt.format(question=question, response=response),
+        model=judge_model
+    )
+    return json.loads(result)
+```
+
+### Comparative Evaluation
+
+More reliable than absolute scoring — have the judge do A/B comparison:
+
+```python
+compare_prompt = """Here are two answers to the same question. Which is better?
+
+Question: {question}
+
+Answer A: {response_a}
+Answer B: {response_b}
+
+Which is better? Output "A", "B", or "tie" with a brief explanation."""
+```
+
+Comparative evaluation reduces scoring subjectivity — humans find it easier to judge "which is better" than "how good."
+
+### LLM Judge Limitations
+
+- **Position bias**: Model may favor the first or last answer
+- **Self-preference**: GPT-4 may prefer GPT-style responses
+- **Mitigation**: Evaluate with A/B swapped and average the results
+
+## Human Evaluation
+
+The most reliable but most expensive evaluation method.
+
+### Evaluation Protocol
+
+```
+Task: Evaluate customer support AI response quality
+
+Each sample includes:
+- User question
+- AI response
+
+Scoring dimensions (1-5 each):
+1. Accuracy: Is the information correct?
+2. Helpfulness: Does it resolve the user's issue?
+3. Tone: Is it professional and friendly?
+4. Conciseness: Does it avoid unnecessary verbosity?
+
+Evaluator requirements:
+- At least 2 people independently evaluate each sample
+- Disagreements > 2 points require discussion to reach consensus
+```
+
+### Practical Execution
+
+1. Randomly sample 50–100 items from the test set
+2. Generate responses from both the fine-tuned and baseline models
+3. Shuffle — evaluators don't know which is which (blind evaluation)
+4. Calculate scores and win rates
+
+## Task-Specific Evaluation Sets
+
+Building a **dedicated evaluation set** for your specific task is the most valuable investment:
+
+```python
+eval_set = [
+    {
+        "input": "I bought a phone case and don't like it, can I return it?",
+        "expected_behavior": [
+            "Confirm refund is possible (within 30 days)",
+            "Ask for order number",
+            "Explain the refund process",
+        ],
+        "bad_behavior": [
+            "Refuse the refund",
+            "Try to upsell other products",
+            "Respond with unrelated content",
+        ]
+    },
+]
+
+def evaluate_on_eval_set(model, eval_set):
+    results = []
+    for case in eval_set:
+        response = model.generate(case["input"])
+
+        expected_hits = sum(
+            1 for behavior in case["expected_behavior"]
+            if behavior_present(response, behavior)
+        )
+
+        bad_hits = sum(
+            1 for behavior in case["bad_behavior"]
+            if behavior_present(response, behavior)
+        )
+
+        results.append({
+            "expected_score": expected_hits / len(case["expected_behavior"]),
+            "bad_score": bad_hits / len(case["bad_behavior"]),
+        })
+
+    return results
+```
+
+## A/B Testing
+
+The ultimate test in production:
+
+```
+Traffic split:
+- 50% users → fine-tuned model
+- 50% users → baseline model
+
+Monitor:
+- User satisfaction scores
+- Task completion rate
+- Human escalation rate
+- Response latency
+```
+
+## Evaluation Strategy Summary
+
+| Method | Cost | Reliability | When to Use |
+|---|---|---|---|
+| Perplexity | Low | Low | During training |
+| LLM-as-Judge | Medium | Medium | Quick iteration |
+| Task eval set | Medium | High | After each fine-tune |
+| Human evaluation | High | High | Before key decisions |
+| A/B testing | High | Highest | Before/after launch |
+
+**Recommended combo: loss during training + eval set after each fine-tune + LLM Judge + human spot-check before launch.**
+
+## Key Takeaways
+
+1. **BLEU/ROUGE are largely useless for LLM evaluation.** Don't rely on them.
+2. **LLM-as-Judge is the most practical evaluation method** — use GPT-4 to evaluate fine-tuned model output. Comparative evaluation is more reliable than absolute scoring.
+3. **Building a dedicated evaluation set is the highest-value investment.** Clearly define what "good" and "bad" look like.
+4. **Combine multiple evaluation methods** — no single method reliably evaluates generation quality.
+5. **A/B testing is the ultimate production test.** No offline evaluation substitutes for real user feedback.

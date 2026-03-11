@@ -1,0 +1,170 @@
+---
+title: "Embeddings and Vector Representations"
+order: 2
+tags: ["rag", "embeddings", "vectors"]
+---
+
+## Turning Text into Numbers
+
+Computers don't understand that "how to return an item" and "refund policy" are similar concepts — they're just different character strings.
+
+**Embeddings** convert text into arrays of numbers (vectors) such that **semantically similar texts are close together in mathematical space**.
+
+```
+"how to return an item"   → [0.23, -0.45, 0.78, ..., 0.12]  // 768 numbers
+"refund policy"           → [0.25, -0.42, 0.75, ..., 0.15]  // very close!
+"the weather is nice"     → [-0.31, 0.67, -0.22, ..., 0.89]  // far away
+```
+
+These vectors typically have 768 to 3072 dimensions. You don't need to understand what each dimension represents — what matters is that similar concepts cluster together in this high-dimensional space.
+
+## Similarity Metrics
+
+With vectors, how do you measure how similar two texts are?
+
+### Cosine Similarity
+
+The most common method. Measures the angle between two vectors:
+
+```
+similarity = cos(θ) = (A · B) / (|A| × |B|)
+
+Range: -1 to 1
+1 = same direction (very similar)
+0 = orthogonal (unrelated)
+-1 = opposite
+```
+
+```python
+import numpy as np
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+sim = cosine_similarity(embed("how to return"), embed("refund policy"))
+# Result might be 0.89 — very similar
+```
+
+### Dot Product
+
+```
+similarity = A · B = Σ(ai × bi)
+```
+
+When vectors are normalized (length = 1), dot product equals cosine similarity. Many embedding models output normalized vectors, so in practice they're often equivalent.
+
+### Euclidean Distance
+
+```
+distance = √(Σ(ai - bi)²)
+```
+
+Smaller distance = more similar. More sensitive to vector magnitude than cosine similarity. Less commonly used for embedding search.
+
+**Practical advice: cosine similarity works for most scenarios.**
+
+## Embedding Models
+
+Embedding models are specifically trained to generate text vectors — different from generative models like GPT or Claude.
+
+### Popular Options
+
+| Model | Dimensions | Notes |
+|---|---|---|
+| OpenAI text-embedding-3-small | 1536 | Affordable, good quality, API |
+| OpenAI text-embedding-3-large | 3072 | Better quality, higher cost |
+| Cohere embed-v3 | 1024 | Excellent multilingual |
+| BGE-large (BAAI) | 1024 | Open-source, strong multilingual |
+| E5-large-v2 | 1024 | Open-source, versatile |
+| nomic-embed-text | 768 | Open-source, runs locally with Ollama |
+| jina-embeddings-v2 | 768 | Open-source, supports long text |
+
+### Selection Guide
+
+- **Quick start**: OpenAI text-embedding-3-small — simple and effective
+- **Need local**: nomic-embed-text (with Ollama) or BGE
+- **Multilingual**: Cohere embed-v3 or BGE
+
+## Generating Embeddings
+
+### OpenAI API
+
+```python
+from openai import OpenAI
+
+client = OpenAI()
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input="How do I request a refund?"
+)
+
+vector = response.data[0].embedding
+print(f"Dimensions: {len(vector)}")  # 1536
+```
+
+### Ollama (Local)
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"
+)
+
+response = client.embeddings.create(
+    model="nomic-embed-text",
+    input="How do I request a refund?"
+)
+
+vector = response.data[0].embedding
+print(f"Dimensions: {len(vector)}")  # 768
+```
+
+### Batch Processing
+
+```python
+texts = [
+    "Refund policy overview",
+    "How to contact support",
+    "Product user guide",
+]
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input=texts  # supports batch input
+)
+
+vectors = [item.embedding for item in response.data]
+```
+
+## Choosing Dimensions
+
+Higher dimensions can represent richer semantic information, but also mean:
+- More storage space
+- Slower search
+- Higher compute costs
+
+| Dimensions | Use Case |
+|---|---|
+| 384–768 | Small projects, limited resources |
+| 1024 | General use, good balance |
+| 1536–3072 | High-precision requirements |
+
+OpenAI's text-embedding-3 series supports **dimension reduction** — you can use the 3072-dimension model but only take the first 1024 dimensions, flexibly trading precision for cost.
+
+## Embedding Limitations
+
+**Semantic ≠ exact match**: Embeddings capture semantic similarity, not exact matches. Searching "Python 3.12 release date" might match "Python release history" but not necessarily the document with the exact date.
+
+**Cross-language performance varies**: Not all embedding models support multiple languages. If your documents and queries might be in different languages, choose a multilingual model.
+
+**Max length limits**: Each model has an input length limit (typically 512–8192 tokens). Text exceeding the limit gets truncated. This is why we need "chunking" — the topic of the next chapter.
+
+## Key Takeaways
+
+1. **Embeddings convert text to vectors** where semantically similar texts are close in vector space. This is the foundation of RAG retrieval.
+2. **Cosine similarity is the standard similarity metric.** Values closer to 1 mean more similar texts.
+3. **Choose models by scenario**: Quick start with OpenAI API, local with nomic-embed-text or BGE, multilingual with Cohere or BGE.
+4. **Dimensions trade precision for cost.** 768–1024 dimensions suffice for most scenarios.

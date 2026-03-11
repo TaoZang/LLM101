@@ -1,0 +1,190 @@
+---
+title: "Deploying Fine-Tuned Models"
+order: 6
+tags: ["fine-tuning", "deployment", "serving"]
+---
+
+## From Training to Production
+
+The model is trained and evaluation looks good. Next question: **how do you deploy it to production?**
+
+## Merging LoRA Weights
+
+If you fine-tuned with LoRA, first decide whether to merge.
+
+### Dynamic Loading (No Merge)
+
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM
+
+base_model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-3.1-8B")
+model = PeftModel.from_pretrained(base_model, "./lora_adapter")
+```
+
+Good for:
+- Same base model with multiple LoRAs
+- Frequent LoRA switching
+
+### Merge and Save
+
+```python
+merged_model = model.merge_and_unload()
+merged_model.save_pretrained("./merged_model")
+tokenizer.save_pretrained("./merged_model")
+```
+
+Good for:
+- Single final model needed
+- Further format conversion (e.g., GGUF)
+- Production deployment
+
+**Merging is recommended for most production scenarios.** No inference overhead, simpler deployment.
+
+## Model Format Conversion
+
+### Convert to GGUF (Local Deployment)
+
+Merged models can be converted to GGUF for Ollama or llama.cpp deployment:
+
+```bash
+# Using llama.cpp conversion script
+python convert_hf_to_gguf.py ./merged_model --outfile model-f16.gguf
+
+# Quantize (optional, reduces size)
+./llama-quantize model-f16.gguf model-Q4_K_M.gguf Q4_K_M
+```
+
+### Use with Ollama
+
+Create a Modelfile:
+
+```dockerfile
+FROM ./model-Q4_K_M.gguf
+
+SYSTEM "You are a professional customer support assistant."
+PARAMETER temperature 0.3
+```
+
+```bash
+ollama create my-finetuned-model -f Modelfile
+ollama run my-finetuned-model
+```
+
+### Keep SafeTensors (GPU Deployment)
+
+For vLLM or TGI deployment, use the merged SafeTensors format directly:
+
+```bash
+# vLLM
+vllm serve ./merged_model --port 8000
+
+# Or upload to Hugging Face
+huggingface-cli upload my-org/my-model ./merged_model
+```
+
+## Choosing a Deployment Solution
+
+| Solution | Hardware | Best For | Performance |
+|---|---|---|---|
+| Ollama + GGUF | CPU / Apple Silicon / GPU | Personal use, small teams | Single-user smooth |
+| llama-server + GGUF | Same | More control needed | Same |
+| vLLM + SafeTensors | NVIDIA GPU | High-concurrency production | High throughput |
+| TGI + SafeTensors | NVIDIA GPU | Production | High throughput |
+| HF Inference Endpoints | Cloud GPU | No infrastructure management | Elastic scaling |
+
+## Performance Optimization
+
+### KV Cache
+
+During inference, the model caches previous tokens' Key-Value pairs to avoid recomputation. This is the most basic inference optimization, enabled by default in most frameworks.
+
+### Continuous Batching
+
+The core advantage of vLLM and TGI — different requests' token generation is interleaved, significantly improving GPU utilization.
+
+```
+Traditional batching:
+Request 1: [generating...............] waiting for request 2
+Request 2: [generating.......] done, but waiting for request 1
+
+Continuous batching:
+Request 1: [generating...............]
+Request 2: [generating.......] → done, slot freed, new request joins
+Request 3:          [generating...........]
+```
+
+### Quantized Deployment
+
+Production can use quantized models too. INT8 or INT4 quantization has minimal quality loss for most tasks:
+
+```bash
+vllm serve ./merged_model \
+  --quantization awq \
+  --port 8000
+```
+
+## Cost Considerations
+
+### Self-Hosted vs Cloud
+
+| | Self-Hosted | Cloud (API) |
+|---|---|---|
+| Upfront cost | High (GPU hardware) | Low |
+| Running cost | Electricity + ops | Pay per use |
+| Best for | High-frequency, latency-sensitive | Low-frequency, elastic demand |
+| Scalability | Manual scaling | Auto-scaling |
+
+### Cost Estimation
+
+```
+Self-hosted (RTX 4090, 24GB):
+- Hardware: ~$2,000
+- Can run: 7B Q4 model, ~50-80 tokens/s
+- Electricity: ~$30/month (24/7)
+- Break-even: depends on usage volume
+
+Cloud (e.g., RunPod, Lambda):
+- A100 80GB: ~$1.5/hour
+- Good for on-demand use, no 24/7 needed
+```
+
+## Monitoring and Iteration
+
+Going live isn't the end — it's the start of a new cycle:
+
+### Key Metrics
+
+```python
+metrics = {
+    "latency_p50": "50th percentile latency",
+    "latency_p99": "99th percentile latency",
+    "throughput": "Requests per second",
+    "error_rate": "Error rate",
+    "user_satisfaction": "User satisfaction",
+    "gpu_utilization": "GPU utilization",
+}
+```
+
+### Continuous Improvement Loop
+
+```
+Collect user feedback
+  ↓
+Identify cases where model performs poorly
+  ↓
+Add these cases to training data
+  ↓
+Re-fine-tune
+  ↓
+Evaluate → Deploy → Continue collecting feedback
+```
+
+This loop drives continuous improvement. Each iteration doesn't need massive new data — a few dozen targeted samples can fix specific problems.
+
+## Key Takeaways
+
+1. **Merge LoRA weights before deployment is the most common path.** Post-merge, convert to GGUF (local) or keep SafeTensors (GPU).
+2. **Personal/small team: Ollama + GGUF.** High-concurrency production: vLLM + SafeTensors.
+3. **Quantized deployment has minimal quality loss in most scenarios** while significantly reducing hardware requirements and cost.
+4. **Deployment is the start of iteration, not the end.** Collect feedback → improve data → re-fine-tune in a continuous improvement loop.

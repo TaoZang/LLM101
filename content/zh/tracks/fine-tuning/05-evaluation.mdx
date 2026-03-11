@@ -1,0 +1,213 @@
+---
+title: "评估与基准测试"
+order: 5
+tags: ["fine-tuning", "evaluation", "metrics"]
+---
+
+## 为什么评估很难
+
+传统机器学习的评估很直接——准确率、F1、AUC 都有明确定义。但对于生成式模型，"好的回答"是个主观概念。
+
+同样一个问题，可能有无数种"正确"的回答方式。评估不是"对不对"的问题，而是"好不好"的问题。
+
+## 自动化指标
+
+### Perplexity（困惑度）
+
+模型对测试数据的"惊讶程度"。越低越好。
+
+```python
+import math
+
+# 在验证集上计算 perplexity
+eval_results = trainer.evaluate()
+perplexity = math.exp(eval_results["eval_loss"])
+print(f"Perplexity: {perplexity}")
+```
+
+Perplexity 的局限：它衡量的是模型预测 token 的能力，不直接衡量回答质量。Perplexity 低不一定意味着回答好。
+
+### BLEU 和 ROUGE
+
+这两个指标衡量生成文本和参考文本的重合程度：
+
+- **BLEU**：生成文本中有多少 n-gram 出现在参考文本中
+- **ROUGE**：参考文本中有多少 n-gram 出现在生成文本中
+
+```python
+from rouge_score import rouge_scorer
+
+scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
+scores = scorer.score(
+    "Model generated answer here",
+    "Reference answer here"
+)
+```
+
+**局限性很大**：这些指标只看词的重合，不看语义。"The cat sat on the mat" 和 "A feline rested on the rug" 意思一样但得分很低。
+
+**结论：BLEU 和 ROUGE 对 LLM 评估用处不大。了解即可，不推荐作为主要指标。**
+
+## LLM-as-Judge（LLM 评估 LLM）
+
+用一个强模型来评估微调模型的输出质量：
+
+```python
+judge_prompt = """请评估以下 AI 回复的质量，从 1-5 分打分。
+
+评分维度：
+- 准确性：信息是否正确
+- 相关性：是否回答了用户的问题
+- 完整性：是否覆盖了关键点
+- 语言质量：表达是否清晰流畅
+
+用户问题：{question}
+AI 回复：{response}
+
+请给出评分（1-5）和简要理由。输出 JSON 格式：
+{{"score": <分数>, "reason": "<理由>"}}"""
+
+def evaluate_with_llm(question, response, judge_model="gpt-4o"):
+    result = llm.generate(
+        judge_prompt.format(question=question, response=response),
+        model=judge_model
+    )
+    return json.loads(result)
+```
+
+### 对比评估
+
+比绝对打分更可靠的方式——让 Judge 做 A/B 对比：
+
+```python
+compare_prompt = """以下是同一问题的两个回答。请判断哪个更好。
+
+问题：{question}
+
+回答 A：{response_a}
+回答 B：{response_b}
+
+哪个回答更好？输出 "A"、"B" 或 "tie"，并简要说明理由。"""
+```
+
+对比评估减少了打分的主观性——人类更容易判断"哪个更好"而不是"有多好"。
+
+### LLM Judge 的局限
+
+- **位置偏差**：模型可能倾向于选择第一个或最后一个回答
+- **自我偏好**：GPT-4 可能更喜欢 GPT 风格的回答
+- **解决方法**：交换 A/B 位置各评一次，取平均
+
+## 人工评估
+
+最可靠但最昂贵的评估方式。
+
+### 评估协议设计
+
+```
+评估任务：评估客服 AI 的回复质量
+
+每条数据包含：
+- 用户问题
+- AI 回复
+
+评分维度（每项 1-5 分）：
+1. 准确性：回复中的信息是否正确
+2. 有帮助性：是否解决了用户的问题
+3. 语气：是否专业友好
+4. 简洁性：是否避免了不必要的冗长
+
+评估者要求：
+- 至少 2 人独立评估每条数据
+- 分歧超过 2 分的需要讨论达成共识
+```
+
+### 实际操作
+
+1. 从测试集中随机抽取 50-100 个样本
+2. 让微调模型和基线模型（未微调/Prompt-only）分别生成回答
+3. 打乱顺序，评估者不知道哪个是哪个（盲评）
+4. 统计评分和胜率
+
+## 任务特定评估集
+
+对于你的具体任务，建立一个**专用评估集**是最有价值的投入：
+
+```python
+eval_set = [
+    {
+        "input": "我买了个手机壳，不喜欢，可以退吗？",
+        "expected_behavior": [
+            "确认可以退款（30天内）",
+            "询问订单号",
+            "说明退款流程",
+        ],
+        "bad_behavior": [
+            "拒绝退款",
+            "推销其他产品",
+            "回答与退款无关的内容",
+        ]
+    },
+    # ... 更多测试用例
+]
+
+def evaluate_on_eval_set(model, eval_set):
+    results = []
+    for case in eval_set:
+        response = model.generate(case["input"])
+
+        # 检查是否包含期望行为
+        expected_hits = sum(
+            1 for behavior in case["expected_behavior"]
+            if behavior_present(response, behavior)  # 可用 LLM 判断
+        )
+
+        # 检查是否包含不良行为
+        bad_hits = sum(
+            1 for behavior in case["bad_behavior"]
+            if behavior_present(response, behavior)
+        )
+
+        results.append({
+            "expected_score": expected_hits / len(case["expected_behavior"]),
+            "bad_score": bad_hits / len(case["bad_behavior"]),
+        })
+
+    return results
+```
+
+## A/B 测试
+
+在生产环境中最终的检验：
+
+```
+流量分配：
+- 50% 用户 → 微调模型
+- 50% 用户 → 基线模型
+
+监控指标：
+- 用户满意度评分
+- 任务完成率
+- 需要转人工的比例
+- 回复速度
+```
+
+## 评估策略总结
+
+| 方法 | 成本 | 可靠性 | 适用阶段 |
+|---|---|---|---|
+| Perplexity | 低 | 低 | 训练中监控 |
+| LLM-as-Judge | 中 | 中 | 快速迭代评估 |
+| 任务评估集 | 中 | 高 | 每次微调后 |
+| 人工评估 | 高 | 高 | 关键决策前 |
+| A/B 测试 | 高 | 最高 | 上线前/后 |
+
+**推荐组合：训练时看 loss + 每次微调后跑评估集 + LLM Judge + 上线前人工抽查。**
+
+## 要点总结
+
+1. **BLEU/ROUGE 对 LLM 评估基本没用。** 不要依赖这些指标。
+2. **LLM-as-Judge 是最实用的评估方式**——用 GPT-4 等强模型评估微调模型的输出。对比评估比绝对打分更可靠。
+3. **建立专用评估集是最值得的投入。** 定义清楚"好"的标准和"坏"的标准。
+4. **多种评估方式组合使用**——没有单一方法能完全可靠地评估生成质量。
+5. **A/B 测试是生产环境的最终检验。** 所有离线评估都不能替代真实用户的反馈。
